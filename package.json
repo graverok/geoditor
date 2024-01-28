@@ -1,0 +1,37 @@
+{
+  "name": "geomeditor",
+  "version": "1.0.0",
+  "main": "dist/geomeditor.cjs.js",
+  "module": "dist/geomeditor.esm.js",
+  "browser": "dist/geomeditor.umd.js",
+  "types": "dist/types/main.d.ts",
+  "devDependencies": {
+    "@babel/core": "^7.2.2",
+    "@babel/preset-env": "^7.2.3",
+    "@types/geojson": "^7946.0.14",
+    "@types/mapbox-gl": "^2.7.19",
+    "mapbox-gl": "^3.1.2",
+    "prettier": "^3.1.1",
+    "rollup": "^2.79.1",
+    "rollup-plugin-babel": "^4.4.0",
+    "rollup-plugin-commonjs": "^9.2.0",
+    "rollup-plugin-dts": "^6.1.0",
+    "rollup-plugin-node-resolve": "^4.0.0",
+    "rollup-plugin-typescript": "^1.0.0",
+    "rollup-plugin-uglify": "^6.0.4",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.12",
+    "vite-tsconfig-paths": "^4.3.1"
+  },
+  "peerDependencies": {
+    "mapbox-gl": "^3.x"
+  },
+  "scripts": {
+    "build": "rollup -c",
+    "dev": "vite"
+  },
+  "files": [
+    "dist"
+  ]
+}
