@@ -1,42 +1,27 @@
-import { GeometryFeature, NodeFeature, Position, LayerType, DataItem } from "../types";
+import { GeometryFeature, LayerType, Node, Position, SourceMouseHandler, SourceEventOptions } from "../types";
 import { geometryTools } from "../lib";
 
-export type RenderFeature = (NodeFeature & { layer: LayerType }) | (GeometryFeature & { layer: LayerType });
-export type RenderEvent = {
-  position: Position;
-  features: RenderFeature[];
-  originalEvent?: unknown;
-  preventDefault?: () => void;
-};
-
-export type RenderEventOptions = { once?: boolean } | undefined;
-
-export type RenderEventHandler = (e: RenderEvent) => void;
 type RenderListenerParams =
-  | [string, LayerType, RenderEventHandler]
-  | [string, RenderEventHandler, RenderEventOptions]
-  | [string, RenderEventHandler];
-
-export interface RenderController {
-  addListener: (...params: RenderListenerParams) => void;
-  removeListener: (...params: RenderListenerParams) => void;
-  setCursor: (value: string) => void;
-  setFeatureState: (layers: LayerType[], id: number, state: Record<string, boolean>) => void;
-}
+  | [string, LayerType, SourceMouseHandler]
+  | [string, SourceMouseHandler, SourceEventOptions]
+  | [string, SourceMouseHandler];
 
 export abstract class Source {
-  private _data: DataItem[] = [];
+  private _data: object[] = [];
   private _features: GeometryFeature[] = [];
-  private _onChange!: ((data: DataItem[]) => void) | undefined;
+  private _onChange!: ((data: any[]) => void) | undefined;
   readonly layerNames: Record<LayerType, string>;
   abstract addListener(...params: RenderListenerParams): void;
   abstract removeListener(...params: RenderListenerParams): void;
   abstract setCursor(value: string): (() => void) | undefined;
-  abstract setFeatureState(layers: LayerType[], id: number | undefined, state: Record<string, boolean>): void;
+  abstract setFeatureState(id: number | undefined, state: Record<string, boolean>): void;
+  abstract setNodeState(id: number | undefined, nodeId: number | undefined, state: Record<string, boolean>): void;
   abstract remove(): void;
-  abstract render(layer: LayerType, features: RenderFeature[]): void;
-  abstract get renderer(): unknown;
+  abstract render(layer: LayerType, features: (GeometryFeature | Node)[]): void;
+  abstract get renderer(): any;
   abstract onInit(callback?: () => void): void;
+  abstract toGeometry(): GeometryFeature[];
+  abstract toData(): any[];
 
   constructor(layerNames: Record<LayerType, string>) {
     this.layerNames = layerNames;
@@ -44,19 +29,16 @@ export abstract class Source {
     this.modifyFeatures = this.modifyFeatures.bind(this);
   }
 
-  set value(data: DataItem[]) {
+  set value(data) {
     this._data = Array.from(data);
-    this._features = data.map((item, index) => ({
-      ...item,
-      id: index + 1,
-    }));
+    this._features = this.toGeometry();
   }
 
   get value() {
     return Array.from(this._data);
   }
 
-  public onChange(callback?: (data: DataItem[]) => void) {
+  public onChange(callback?: (data: any[]) => void) {
     this._onChange = callback;
   }
 
@@ -79,20 +61,12 @@ export abstract class Source {
 
       return {
         ...item,
-        geometry: geometryTools.getGeometry(updater(geometryTools.getPositions(item.geometry)), item.geometry.type),
-      };
+        coordinates: geometryTools.getCoordinates(updater(geometryTools.getPoints(item)), item.type),
+      } as GeometryFeature;
     });
   }
 
   public updateData() {
-    this._data = [
-      ...this._data.map((item, index) => ({
-        ...item,
-        geometry: this._features[index]?.geometry || item.geometry,
-      })),
-      ...(this._features.length > this._data.length ? [this._features[this._features.length - 1]] : []),
-    ];
-
-    this._onChange?.(this._data);
+    this._onChange?.(this.toData());
   }
 }

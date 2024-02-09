@@ -1,35 +1,64 @@
-import { RenderFeature, RenderEventHandler, RenderEvent } from "../../controllers";
-import { Map, MapboxGeoJSONFeature, MapLayerMouseEvent, MapLayerTouchEvent, MapMouseEvent } from "mapbox-gl";
-import { LayerType } from "../../types";
+import { Map, MapLayerMouseEvent, MapLayerTouchEvent, MapMouseEvent } from "mapbox-gl";
+import { GeometryFeature, LayerType, Node, Position, SourceEvent, SourceMouseHandler } from "../../types";
+import { Feature, LineString, Polygon } from "geojson";
+import { NodeGeoJSONProperties } from "./mapbox-source";
+import { positionTools } from "../../lib";
 
-export const eventMapParser = (e: MapMouseEvent): RenderEvent => ({
+export const eventMapParser = (e: MapMouseEvent): SourceEvent => ({
   position: e.lngLat.toArray(),
   originalEvent: e.originalEvent,
-  preventDefault: e.preventDefault,
   features: [],
+  nodes: [],
 });
+
+const sortNodesByDistance = (nodes: Node[], position: Position) => {
+  return [...nodes].sort((a, b) =>
+    positionTools.distance(a.position, position) > positionTools.distance(b.position, position) ? 1 : -1,
+  );
+};
 
 export const eventLayerParser =
   (layer: LayerType) =>
-  (e: MapLayerMouseEvent | MapLayerTouchEvent): RenderEvent => ({
-    position: e.lngLat.toArray(),
-    originalEvent: e.originalEvent,
-    preventDefault: e.preventDefault,
-    features: (e.features ?? []).map(
-      (feature: MapboxGeoJSONFeature) =>
-        ({
-          ...feature,
-          layer,
-          geometry: feature.geometry,
-        }) as RenderFeature,
-    ),
-  });
+  (e: MapLayerMouseEvent | MapLayerTouchEvent): SourceEvent => {
+    return {
+      position: e.lngLat.toArray(),
+      originalEvent: e.originalEvent,
+      layer,
+      features:
+        layer !== "node"
+          ? (e.features || []).map(
+              (item) =>
+                ({
+                  id: item.id,
+                  type: item.geometry.type,
+                  coordinates: (item as Feature<LineString> | Feature<Polygon>).geometry.coordinates,
+                  props: item.properties,
+                }) as GeometryFeature,
+            )
+          : [],
+      nodes:
+        layer === "node"
+          ? sortNodesByDistance(
+              (e.features || []).map((item) => {
+                const properties = item.properties as NodeGeoJSONProperties;
+                return {
+                  id: properties.id,
+                  parentId: properties.parentId,
+                  position: JSON.parse(properties.position),
+                };
+              }),
+              e.lngLat.toArray(),
+            )
+          : [],
+    };
+  };
 
 export function addMouseLeaveHandler(
   map: Map | undefined,
+  features: GeometryFeature[],
   layer: LayerType,
   mapLayer: string,
-  callback: RenderEventHandler,
+  callback: SourceMouseHandler,
 ) {
   let featurePoint: mapboxgl.Point | undefined;
 
@@ -54,9 +83,10 @@ export function addMouseLeaveHandler(
 
 export function addMouseDownHandler(
   map: Map | undefined,
+  features: GeometryFeature[],
   layer: LayerType,
   mapLayer: string,
-  callback: RenderEventHandler,
+  callback: SourceMouseHandler,
 ) {
   let isDragPan: boolean;
 

@@ -1,49 +1,97 @@
 import {
+  AnyLayer,
+  GeoJSONSource,
+  Layer,
   Map,
   MapEventType,
   MapLayerEventType,
   MapLayerMouseEvent,
   MapLayerTouchEvent,
   MapMouseEvent,
-  GeoJSONSource,
-  AnyLayer,
-  Layer,
 } from "mapbox-gl";
-import { Feature } from "geojson";
+import { Feature, LineString, Point, Polygon } from "geojson";
 
-import { RenderEventOptions, RenderEventHandler, Source, RenderFeature } from "../../controllers";
-import { Geometry, LayerType } from "../../types";
+import { Source } from "../../controllers";
+import { GeometryFeature, LayerType, Node, SourceEventOptions, SourceMouseHandler } from "../../types";
 import { geometryTools } from "../../lib";
 import { addMouseDownHandler, addMouseLeaveHandler, eventLayerParser, eventMapParser } from "./lib";
 import {
+  AddSourcePayload,
   areaFillLayer,
   areaLineLayer,
   areaPointLayer,
   defaultConfig,
   generateLayers,
-  splitLayers,
   Options,
-  AddSourcePayload,
+  splitLayers,
 } from "./config";
 
 type Subscription = {
   off: () => void;
   name: string;
-  callback: RenderEventHandler;
+  callback: SourceMouseHandler;
   layer?: string;
 };
+
+export type NodeGeoJSONProperties = Omit<Node, "position"> & { position: string } & Record<string, any>;
 
 type ConstructorParams = [number | string, Map, Options] | [Map, Options] | [number | string, Map] | [Map];
 
 export class MapboxSource extends Source {
-  private map: Map | undefined;
-  private options: Options | undefined;
-  private removeSources!: () => void;
-  private subscriptions: Subscription[] = [];
+  private _map: Map | undefined;
+  private _nodes: Record<number, Record<number, string>> = {};
+  private _options: Options | undefined;
+  private _removeSources!: () => void;
+  private _subscriptions: Subscription[] = [];
   private _onInit: (() => void) | undefined;
 
   get renderer() {
-    return this.map;
+    return this._map;
+  }
+
+  toGeometry(): GeometryFeature[] {
+    return (this.value as (Feature<LineString> | Feature<Polygon>)[]).map(
+      (item, index) =>
+        ({
+          id: index + 1,
+          type: item.geometry.type,
+          coordinates: item.geometry.coordinates,
+          props: item.properties,
+        }) as GeometryFeature,
+    );
+  }
+
+  toData() {
+    const features = this.features;
+    const data = this.value;
+    return [
+      ...data.map(
+        (item, index) =>
+          ({
+            ...item,
+            geometry: {
+              type: features[index].type,
+              coordinates: features[index].coordinates,
+            },
+            properties: features[index].props,
+          }) as Feature<LineString> | Feature<Polygon>,
+      ),
+      ...(features.length > data.length
+        ? [
+            ...features.slice(data.length).map(
+              (feature) =>
+                ({
+                  type: "Feature",
+                  geometry: {
+                    type: feature.type,
+                    coordinates: feature.coordinates,
+                  },
+                  properties: feature.props,
+                }) as Feature<LineString> | Feature<Polygon>,
+            ),
+          ]
+        : []),
+    ];
   }
 
   constructor(...params: ConstructorParams) {
@@ -53,7 +101,6 @@ export class MapboxSource extends Source {
         : ([undefined, params[0], params[1]] as [undefined, Map, Options | undefined]);
     super({
       node: `@@map-editor-${id ?? ""}-node`,
-      point: `@@map-editor-${id ?? ""}-point`,
       line: `@@map-editor-${id ?? ""}-line`,
       fill: `@@map-editor-${id ?? ""}-fill`,
     });
@@ -61,11 +108,12 @@ export class MapboxSource extends Source {
     this.removeListener = this.removeListener.bind(this);
     this.setCursor = this.setCursor.bind(this);
     this.setFeatureState = this.setFeatureState.bind(this);
-    this.options = options;
+    this.setNodeState = this.setNodeState.bind(this);
+    this._options = options;
 
     const init = () => {
-      this.map = map;
-      this.initSources(this.options);
+      this._map = map;
+      this._initSources(this._options);
       this._onInit?.();
     };
 
@@ -73,14 +121,14 @@ export class MapboxSource extends Source {
   }
 
   onInit(callback: () => void) {
-    if (this.map) {
+    if (this._map) {
       callback();
     } else {
       this._onInit = callback;
     }
   }
 
-  private initSources(options?: Options) {
+  private _initSources(options?: Options) {
     const layerStyles = options?.layerStyles ?? generateLayers(options?.paintConfig ?? defaultConfig);
     const [pointLayers, lineLayers, fillLayers] = splitLayers(layerStyles);
 
@@ -102,38 +150,26 @@ export class MapboxSource extends Source {
         },
       },
       {
-        id: this.layerNames.point,
-        layers: pointLayers,
-        areaLayer: {
-          ...areaPointLayer,
-          paint: {
-            ...areaPointLayer.paint,
-            "circle-radius": options?.pointArea || areaPointLayer.paint["circle-radius"],
-          },
-        },
-      },
-      {
         id: this.layerNames.node,
         layers: pointLayers,
         areaLayer: {
           ...areaPointLayer,
           paint: {
             ...areaPointLayer.paint,
-            "circle-opacity": 0.3,
             "circle-radius": options?.pointArea || areaPointLayer.paint["circle-radius"],
           },
         },
       },
     ];
 
-    sources.forEach((source) => this.addSource(source));
-    this.removeSources = () => sources.forEach((source) => this.removeSource(source));
+    sources.forEach((source) => this._addSource(source));
+    this._removeSources = () => sources.forEach((source) => this._removeSource(source));
   }
 
-  private addSource = ({ id, layers, areaLayer }: AddSourcePayload) => {
-    if (!this.map) return;
-    if (this.map.getSource(id)) this.removeSource({ id, layers, areaLayer });
-    this.map.addSource(id, {
+  private _addSource = ({ id, layers, areaLayer }: AddSourcePayload) => {
+    if (!this._map) return;
+    if (this._map.getSource(id)) this._removeSource({ id, layers, areaLayer });
+    this._map.addSource(id, {
       type: "geojson",
       data: {
         type: "FeatureCollection",
@@ -143,181 +179,233 @@ export class MapboxSource extends Source {
 
     layers.forEach(
       (layer: Omit<Layer, "id">, index: number) =>
-        this.map?.addLayer({
+        this._map?.addLayer({
           ...layer,
           id: `${id}-${index + 1}`,
           source: id,
         } as AnyLayer),
     );
-    areaLayer && this.map.addLayer({ ...areaLayer, source: id, id } as AnyLayer);
+    areaLayer && this._map.addLayer({ ...areaLayer, source: id, id } as AnyLayer);
   };
 
-  private removeSource({ id, layers, areaLayer }: AddSourcePayload) {
-    if (!this.map) return;
-    areaLayer && this.map.getLayer(id) && this.map.removeLayer(id);
+  private _removeSource({ id, layers, areaLayer }: AddSourcePayload) {
+    if (!this._map) return;
+    areaLayer && this._map.getLayer(id) && this._map.removeLayer(id);
     layers.forEach(
       (layer: Omit<Layer, "id">, index: number) =>
-        this.map?.getLayer(`${id}-${index + 1}`) && this.map?.removeLayer(`${id}-${index + 1}`),
+        this._map?.getLayer(`${id}-${index + 1}`) && this._map?.removeLayer(`${id}-${index + 1}`),
     );
-    this.map.getSource(id) && this.map.removeSource(id);
+    this._map.getSource(id) && this._map.removeSource(id);
   }
 
   setCursor(value: string) {
-    if (!this.map) return;
-    const prev = this.map.getCanvas().style.cursor;
+    if (!this._map) return;
+    const prev = this._map.getCanvas().style.cursor;
     if (prev !== value) {
-      this.map.getCanvas().style.cursor = value;
+      this._map.getCanvas().style.cursor = value;
     }
 
     return () => {
-      if (!this.map) return;
-      const current = this.map.getCanvas().style.cursor;
+      if (!this._map) return;
+      const current = this._map.getCanvas().style.cursor;
       if (current !== prev) {
-        this.map.getCanvas().style.cursor = prev;
+        this._map.getCanvas().style.cursor = prev;
       }
     };
   }
 
-  private ignoreDblClickZoom() {
-    if (!this.map) return;
-    if (!this.map.doubleClickZoom.isEnabled()) return;
+  private _ignoreDblClickZoom() {
+    if (!this._map) return;
+    if (!this._map.doubleClickZoom.isEnabled()) return;
 
-    this.map.doubleClickZoom.disable();
-    setTimeout(() => this.map?.doubleClickZoom.enable(), 500);
+    this._map.doubleClickZoom.disable();
+    setTimeout(() => this._map?.doubleClickZoom.enable(), 500);
   }
 
-  private addSubscription(props: Subscription) {
-    const current = this.subscriptions.findIndex(
+  private _addSubscription(props: Subscription) {
+    const current = this._subscriptions.findIndex(
       (item) => item.name === props.name && item.layer === props.layer && item.callback === props.callback,
     );
     if (current >= 0) {
-      this.subscriptions[current].off();
-      this.subscriptions[current] = props;
+      this._subscriptions[current].off();
+      this._subscriptions[current] = props;
       return;
     }
 
-    this.subscriptions.push(props);
+    this._subscriptions.push(props);
   }
 
-  private removeSubscription(props: Omit<Subscription, "off">) {
-    const index = this.subscriptions.findIndex(
+  private _removeSubscription(props: Omit<Subscription, "off">) {
+    const index = this._subscriptions.findIndex(
       (item) => item.name === props.name && item.layer === props.layer && item.callback === props.callback,
     );
     if (index >= 0) {
-      this.subscriptions[index].off();
-      this.subscriptions = [...this.subscriptions.slice(0, index), ...this.subscriptions.slice(index + 1)];
+      this._subscriptions[index].off();
+      this._subscriptions = [...this._subscriptions.slice(0, index), ...this._subscriptions.slice(index + 1)];
     }
   }
 
-  private _addMapListener(name: keyof MapEventType, callback: RenderEventHandler, once = false) {
+  private _addMapListener(name: keyof MapEventType, callback: SourceMouseHandler, once = false) {
     const handler = (e: MapMouseEvent) => {
       callback(eventMapParser(e));
     };
 
     if (once) {
-      this.map?.once(name, handler);
+      this._map?.once(name, handler);
       return;
     }
 
-    this.map?.on(name, handler);
-    this.addSubscription({ callback, name, off: () => this.map?.off(name, handler) });
+    this._map?.on(name, handler);
+    this._addSubscription({ callback, name, off: () => this._map?.off(name, handler) });
   }
 
-  private _addLayerListener(name: keyof MapLayerEventType, layer: LayerType, callback: RenderEventHandler) {
-    if (name === "mouseleave") {
-      return this.addSubscription({
+  private _addLayerListener(name: keyof MapLayerEventType, layer: LayerType, callback: SourceMouseHandler) {
+    if (name === "mouseleave" || name === "mouseover") {
+      return this._addSubscription({
         callback,
         name,
         layer,
-        off: addMouseLeaveHandler(this.map, layer, this.layerNames[layer], callback),
+        off: addMouseLeaveHandler(this._map, this.features, layer, this.layerNames[layer], callback),
       });
     }
 
     if (name === "mousedown") {
-      return this.addSubscription({
+      return this._addSubscription({
         callback,
         name,
         layer,
-        off: addMouseDownHandler(this.map, layer, this.layerNames[layer], callback),
+        off: addMouseDownHandler(this._map, this.features, layer, this.layerNames[layer], callback),
       });
     }
 
     const handler = (e: MapLayerMouseEvent | MapLayerTouchEvent) => {
-      name === "click" && this.ignoreDblClickZoom();
+      name === "click" && this._ignoreDblClickZoom();
 
       callback(eventLayerParser(layer)(e));
     };
 
-    this.map?.on(name, this.layerNames[layer], handler);
-    this.addSubscription({
+    this._map?.on(name, this.layerNames[layer], handler);
+    this._addSubscription({
       name,
       layer,
       callback,
-      off: () => this.map?.off(name, this.layerNames[layer], handler),
+      off: () => this._map?.off(name, this.layerNames[layer], handler),
     });
   }
 
   public addListener(
     ...params:
-      | [keyof MapEventType, RenderEventHandler, RenderEventOptions]
-      | [keyof MapLayerEventType, LayerType, RenderEventHandler]
+      | [keyof MapEventType, SourceMouseHandler, SourceEventOptions]
+      | [keyof MapLayerEventType, LayerType, SourceMouseHandler]
   ) {
     if (typeof params[1] === "function") {
-      const [name, callback, options] = params as [keyof MapEventType, RenderEventHandler, RenderEventOptions];
+      const [name, callback, options] = params as [keyof MapEventType, SourceMouseHandler, SourceEventOptions];
       this._addMapListener(name, callback, options?.once);
     } else {
-      const [name, layer, callback] = params as [keyof MapLayerEventType, LayerType, RenderEventHandler];
+      const [name, layer, callback] = params as [keyof MapLayerEventType, LayerType, SourceMouseHandler];
       this._addLayerListener(name, layer, callback);
     }
   }
 
   public removeListener(
-    ...params: [keyof MapEventType, RenderEventHandler] | [keyof MapLayerEventType, LayerType, RenderEventHandler]
+    ...params: [keyof MapEventType, SourceMouseHandler] | [keyof MapLayerEventType, LayerType, SourceMouseHandler]
   ) {
     if (typeof params[1] === "function") {
-      const [name, callback] = params as [keyof MapEventType, RenderEventHandler];
-      this.removeSubscription({ name, callback });
+      const [name, callback] = params as [keyof MapEventType, SourceMouseHandler];
+      this._removeSubscription({ name, callback });
     } else {
-      const [name, layer, callback] = params as [keyof MapLayerEventType, LayerType, RenderEventHandler];
-      this.removeSubscription({ name, layer, callback });
+      const [name, layer, callback] = params as [keyof MapLayerEventType, LayerType, SourceMouseHandler];
+      this._removeSubscription({ name, layer, callback });
     }
   }
 
-  public setFeatureState(layers: LayerType[], id: number | undefined, state: Record<string, boolean>) {
-    id && layers.forEach((layer) => this.map?.setFeatureState({ id, source: this.layerNames[layer] }, state));
+  public setFeatureState(id: number | undefined, state: Record<string, boolean>) {
+    if (!id) return;
+    this._map?.setFeatureState({ id, source: this.layerNames.line }, state);
+    this._map?.setFeatureState({ id, source: this.layerNames.fill }, state);
   }
 
-  private reducer(type: LayerType): (acc: Feature[], item: RenderFeature) => Feature[] {
+  public setNodeState(id: number | undefined, nodeId: number | undefined, state: Record<string, boolean>) {
+    if (!id || !nodeId) return;
+    const globalId = this._nodes[id]?.[nodeId];
+    globalId && this._map?.setFeatureState({ id: globalId, source: this.layerNames.node }, state);
+  }
+
+  private _pushNode(globalId: string, featureId: number, currentNode: number) {
+    this._nodes = { ...this._nodes, [featureId]: { ...this._nodes?.[featureId], [currentNode]: globalId } };
+  }
+
+  private _reducer(type: LayerType): (acc: Feature[], item: GeometryFeature) => Feature[] {
     switch (type) {
       case "fill":
-        return (acc: Feature[] = [], item: RenderFeature) =>
-          item.geometry.type === "Polygon" ? [...acc, item as Feature] : acc;
-      case "point":
-        return (acc: Feature[] = [], item: RenderFeature) => [
+        return (acc: Feature[] = [], item) =>
+          item.type === "Polygon"
+            ? [
+                ...acc,
+                {
+                  id: item.id,
+                  type: "Feature",
+                  geometry: {
+                    type: item.type,
+                    coordinates: [...item.coordinates.slice(0, item.coordinates.length - 1), item.coordinates[0]],
+                  },
+                  properties: item.props,
+                } as Feature,
+              ]
+            : acc;
+      case "node":
+        this._nodes = [];
+        return (acc: Feature[] = [], item: GeometryFeature) => {
+          const positions = geometryTools.getPoints(item);
+          return [
+            ...acc,
+            ...positions.map((position, index) => {
+              this._pushNode(String(acc.length + index + 1), item.id, index + 1);
+
+              return {
+                id: String(acc.length + index + 1),
+                type: "Feature",
+                geometry: {
+                  type: "Point",
+                  coordinates: position,
+                },
+                properties: {
+                  ...item.props,
+                  parentId: item.id,
+                  id: index + 1,
+                  position: JSON.stringify(position),
+                },
+              } as Feature<Point, NodeGeoJSONProperties>;
+            }),
+          ];
+        };
+
+      default:
+        return (acc: Feature[] = [], item: GeometryFeature) => [
           ...acc,
           {
-            ...item,
+            id: item.id,
+            type: "Feature",
             geometry: {
-              type: "MultiPoint",
-              coordinates: geometryTools.getPositions(item.geometry as Geometry),
+              type: item.type,
+              coordinates: item.coordinates,
             },
+            properties: item.props,
           } as Feature,
         ];
-      default:
-        return (acc: Feature[] = [], item: RenderFeature) => [...acc, item as Feature];
     }
   }
 
-  render(type: LayerType, features: RenderFeature[]) {
-    (this.map?.getSource(this.layerNames[type]) as GeoJSONSource)?.setData({
+  render(type: LayerType, features: GeometryFeature[]) {
+    (this._map?.getSource(this.layerNames[type]) as GeoJSONSource)?.setData({
       type: "FeatureCollection",
-      features: features.reduce(this.reducer(type), []),
+      features: features.reduce(this._reducer(type), []),
     });
   }
 
   public remove() {
-    this.removeSources?.();
-    this.map = undefined;
+    this._removeSources?.();
+    this._map = undefined;
   }
 }
 [];

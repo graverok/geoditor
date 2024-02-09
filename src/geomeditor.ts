@@ -1,18 +1,17 @@
 import { Source, AnyTool, Core } from "./controllers";
 import { CreateTool, ModifyTool } from "./tools";
-import { DataItem } from "./types";
 
 const defaultTools = {
   create: CreateTool,
   modify: ModifyTool,
 };
 
-export class Geomeditor {
+export class Geomeditor<T extends object> {
   private _tools: AnyTool[] = [];
   private _tool: AnyTool | undefined;
   private _core: Core;
   private _onLoad: (() => void) | undefined;
-  private _onChange: ((features: DataItem[]) => void) | undefined;
+  private _onChange: ((data: T[]) => void) | undefined;
   private _onSelect: ((indices: number[]) => void) | undefined;
   private _isLoaded = false;
 
@@ -20,7 +19,7 @@ export class Geomeditor {
     this._onSelect = callback;
   }
 
-  public onChange(callback?: (features: DataItem[]) => void) {
+  public onChange(callback?: (data: T[]) => void) {
     this._onChange = callback;
   }
 
@@ -46,15 +45,14 @@ export class Geomeditor {
       return new Controller(this._core);
     });
 
-    source.onChange((data) => this._onChange?.(data));
+    source.onChange((data: T[]) => this._onChange?.(data));
     source.onInit(() => this._onInit());
   }
 
-  public setData(data: DataItem[]) {
+  public setData(data: T[]) {
     this._core.value = data;
-    this._core.refresh();
-    this._tool?.refresh();
     this._core.selected = this._core.selected.length ? [Math.min(this._core.selected[0], data.length)] : [];
+    this._tool?.refresh();
   }
 
   public setTool(name?: keyof typeof defaultTools | string, options?: unknown) {

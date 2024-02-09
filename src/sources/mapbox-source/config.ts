@@ -35,7 +35,7 @@ export const areaPointLayer = {
 export const areaLineLayer = {
   type: "line",
   paint: {
-    "line-width": 14,
+    "line-width": 10,
     "line-color": "#0000FF",
     "line-opacity": 0,
   },
@@ -53,59 +53,63 @@ export const defaultConfig: PaintConfig = [
   {
     type: "fill",
     default: {
-      "fill-color": "#000000",
+      "fill-color": ["get", "color"],
       "fill-opacity": 0.1,
-    },
-    selected: {
-      "fill-opacity": 0.2,
-    },
-    hovered: {
-      "fill-opacity": 0.2,
-    },
-    active: {
-      "fill-color": "#0B99FF",
     },
   },
   {
     type: "line",
     default: {
       "line-width": 1.5,
-      "line-color": "#000000",
+      "line-color": ["get", "color"],
       "line-opacity": 0.8,
     },
     selected: {
-      "line-width": 1.5,
+      "line-width": 2,
       "line-opacity": 1,
     },
     hovered: {
-      "line-width": 2.5,
+      "line-width": 2,
+      "line-opacity": 1,
     },
     active: {
-      "line-color": "#0B99FF",
+      "line-width": 2,
+      "line-opacity": 1,
     },
   },
   {
     type: "circle",
     default: {
-      "circle-radius": 2.5,
-      "circle-stroke-width": 1.5,
+      "circle-radius": 2,
+      "circle-stroke-width": 2,
       "circle-color": "#FFFFFF",
-      "circle-stroke-color": "#000000",
+      "circle-stroke-color": ["get", "color"],
     },
     selected: {
-      "circle-color": "#0B99FF",
+      "circle-color": ["get", "color"],
       "circle-stroke-color": "#FFFFFF",
+      "circle-radius": 2.5,
     },
     hovered: {
-      "circle-radius": 3,
-      "circle-stroke-width": 2,
+      "circle-stroke-color": ["get", "color"],
+      "circle-color": "#FFFFFF",
+      "circle-radius": 2.5,
     },
     active: {
-      "circle-color": "#FFFFFF",
-      "circle-stroke-color": "#0B99FF",
+      "circle-stroke-color": "#FFFFFF",
+      "circle-color": ["get", "color"],
+      "circle-radius": 2.5,
     },
   },
 ];
+
+const parser = (value: string | number | any[] | any[][]) => {
+  if (Array.isArray(value) && Array.isArray(value[0])) {
+    return value;
+  } else {
+    return [value];
+  }
+};
 
 export const generateLayers = (config: PaintConfig): Omit<Layer, "id">[] => {
   return config.map((item) => {
@@ -119,14 +123,14 @@ export const generateLayers = (config: PaintConfig): Omit<Layer, "id">[] => {
           [key]: [
             "case",
             ["boolean", ["feature-state", "active"], false],
-            item.active?.[key] || item.hovered?.[key] || item.selected?.[key] || item.default[key],
+            ...parser(item.active?.[key] || item.hovered?.[key] || item.selected?.[key] || item.default[key]),
             // ["all", ["feature-state", "selected"], ["feature-state", "hovered"]],
-            // item.hovered?.[key] || item.selected?.[key] || item.default[key],
+            // ...parser(item.selected?.[key] || item.hovered?.[key] || item.default[key]),
             ["boolean", ["feature-state", "hovered"], false],
-            item.hovered?.[key] || item.default[key],
+            ...parser(item.hovered?.[key] || item.default[key]),
             ["boolean", ["feature-state", "selected"], false],
-            item.selected?.[key] || item.default[key],
-            item.default[key],
+            ...parser(item.selected?.[key] || item.default[key]),
+            ...parser(item.default[key]),
           ],
         };
       }, {} as AnyPaint),

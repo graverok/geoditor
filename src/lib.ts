@@ -1,20 +1,4 @@
-import { DrawType, Geometry, Position } from "./types";
-
-const getGeometry = (positions: Position[], type: DrawType) => {
-  switch (type) {
-    case "Polygon":
-      return {
-        type,
-        coordinates: [[...positions.slice(0, positions.length - 1), positions[0]]],
-      };
-    default: {
-      return {
-        type,
-        coordinates: positions,
-      };
-    }
-  }
-};
+import { GeometryFeature, Polygon, Position } from "./types";
 
 const getDistanceToLine = (point: Position, [start, end]: [Position, Position]) => {
   const a = point[0] - start[0];
@@ -47,8 +31,9 @@ const getDistanceToLine = (point: Position, [start, end]: [Position, Position]) 
   return Math.sqrt(dx * dx + dy * dy);
 };
 
-const getClosestLine = function (geometry: Geometry | undefined, point: Position) {
-  const positions = getPositions(geometry);
+const getClosestLine = function (feature: GeometryFeature | undefined, point: Position) {
+  const positions = getPoints(feature);
+  if (feature?.type === "Polygon") positions.push(positions[0]);
   const { index } = positions.slice(1).reduce(
     (acc: { index: number; delta?: number }, item, index) => {
       const delta = getDistanceToLine(point, [positions[index], item]);
@@ -64,61 +49,75 @@ const getClosestLine = function (geometry: Geometry | undefined, point: Position
   };
 };
 
-const getDistanceToPoint = (start: Position, end: Position): number => {
-  return Math.sqrt(Math.pow(end[0] - start[0], 2) + Math.pow(end[1] - start[1], 2));
-};
+// const getClosestPoint = (feature: GeometryFeature, position: Position) => {
+//   const positions = getPositions(feature);
+//   let distance: number | undefined;
+//
+//   return positions.reduce(
+//     (
+//       acc: {
+//         id: number;
+//         before: number;
+//         after: number;
+//         position?: Position;
+//       },
+//       item,
+//       index,
+//     ) => {
+//       const nextDistance = getDistanceToPoint(position, item);
+//       if (typeof distance !== "number" || nextDistance < distance) {
+//         distance = nextDistance;
+//         return {
+//           id: index + 1,
+//           current: index + 1,
+//           before: index > 0 ? index : feature.type === "Polygon" ? positions.length - 1 : 0,
+//           after:
+//             feature.type === "Polygon"
+//               ? index < positions.length - 2
+//                 ? index + 2
+//                 : 1
+//               : index < positions.length - 1
+//                 ? index + 2
+//                 : 0,
+//           position: item,
+//         };
+//       }
+//       return acc;
+//     },
+//     { id: 0, before: 0, after: 0 },
+//   );
+// };
 
-const getClosestPoint = (geometry: Geometry, position: Position) => {
-  const positions = getPositions(geometry);
-  let distance: number | undefined;
-
-  return positions.reduce(
-    (
-      acc: {
-        id: number;
-        before: number;
-        after: number;
-        position?: Position;
-      },
-      item,
-      index,
-    ) => {
-      const nextDistance = getDistanceToPoint(position, item);
-      if (typeof distance !== "number" || nextDistance < distance) {
-        distance = nextDistance;
-        return {
-          id: index + 1,
-          before: index > 0 ? index : geometry.type === "Polygon" ? positions.length - 1 : 0,
-          after:
-            geometry.type === "Polygon"
-              ? index < positions.length - 2
-                ? index + 2
-                : 1
-              : index < positions.length - 1
-                ? index + 2
-                : 0,
-          position: item,
-        };
-      }
-      return acc;
-    },
-    { id: 0, before: 0, after: 0 },
-  );
-};
-
-const getPositions = (geometry?: Geometry) => {
-  if (!geometry) return [];
-
-  switch (geometry.type) {
+/**
+ * Converts positions to geometry coordinates
+ */
+const getCoordinates = (positions: Position[], type: GeometryFeature["type"]): GeometryFeature["coordinates"] => {
+  switch (type) {
     case "Polygon":
-      return [...geometry.coordinates[0]];
+      return [[...positions, positions[0]]];
     default:
-      return [...geometry.coordinates];
+      return positions;
   }
 };
 
-const getEndings = (geometry: Geometry | undefined, isReversed: boolean) => {
-  const positions = getPositions(geometry);
+/**
+ * Return unique points to render nodes
+ */
+const getPoints = (feature?: GeometryFeature): Position[] => {
+  if (!feature) return [];
+  switch (feature.type) {
+    case "Polygon":
+      return [...feature.coordinates[0].slice(0, feature.coordinates[0].length - 1)];
+    default:
+      return [...feature.coordinates];
+  }
+};
+
+/**
+ * Return ids of first and last nodes of the line
+ */
+const getEndings = (feature: GeometryFeature | undefined, isReversed: boolean) => {
+  const positions = getPoints(feature);
 
   return {
     end: isReversed ? 1 : positions.length,
@@ -127,20 +126,20 @@ const getEndings = (geometry: Geometry | undefined, isReversed: boolean) => {
   };
 };
 
-const createPolygon = (geometry: Geometry | undefined): Geometry => {
-  const positions = getPositions(geometry);
-  return {
-    type: "Polygon",
-    coordinates: [[...positions, positions[0]]],
-  };
+/**
+ * Converts LineString to Polygon
+ * Probably is redundant
+ */
+const createPolygon = (feature?: GeometryFeature): Polygon["coordinates"] => {
+  const positions = getPoints(feature);
+  return [[...positions, positions[0]]];
 };
-
 export const geometryTools = {
-  getPositions,
+  getPoints,
   getEndings,
-  getGeometry,
+  getCoordinates,
   getClosestLine,
-  getClosestPoint,
+  // getClosestPoint,
   createPolygon,
 };
 
@@ -157,9 +156,12 @@ export const positionTools = {
     if (!start || !end) return start || end;
     return [(start[0] + end[0]) * 0.5, (start[1] + end[1]) * 0.5];
   },
-};
-
-export const isEqual = <T = number>(next: T[], current: T[]) => {
-  if (next.length !== current.length) return false;
-  return !next.some((n) => !current.includes(n));
+  equal: (start: Position, end: Position) => {
+    if (!start || !end) return false;
+    return start[0] === end[0] && start[1] === end[1];
+  },
+  distance: (start: Position, end: Position): number => {
+    if (!start || !end) return -1;
+    return Math.sqrt(Math.pow(end[0] - start[0], 2) + Math.pow(end[1] - start[1], 2));
+  },
 };

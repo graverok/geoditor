@@ -38,8 +38,9 @@ if (container) {
   });
 
   editor.onChange((data) => {
-    console.log("update");
+    console.log("update", data);
     editor.setTool("modify");
+    editor.setData(data);
     localStorage.setItem("geomeditor-data", JSON.stringify(data));
   });
 
@@ -48,15 +49,14 @@ if (container) {
   });
 
   document.getElementById("create")?.addEventListener("click", () => {
-    editor.setTool("create");
+    editor.setTool("create", { props: { color: "#0000FF" } });
   });
 
   document.getElementById("delete")?.addEventListener("click", () => {
     const selected = editor.selected;
     if (!selected.length) return;
-    const data = JSON.parse(localStorage.getItem("geomeditor-data") || "[]").filter(
-      (_: unknown, index: number) => !selected.includes(index),
-    );
+    const currentData = JSON.parse(localStorage.getItem("geomeditor-data") || "[]");
+    const data = currentData.filter((_: unknown, index: number) => !selected.includes(index));
     editor.setData(data);
     localStorage.setItem("geomeditor-data", JSON.stringify(data));
   });
