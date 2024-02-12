@@ -1,15 +1,15 @@
 import { Source, AnyTool, Core } from "./controllers";
-import { CreateTool, ModifyTool } from "./tools";
+import { PenTool, EditTool } from "./tools";
 
 const defaultTools = {
-  create: CreateTool,
-  modify: ModifyTool,
+  pen: PenTool,
+  edit: EditTool,
 };
 
 export class Geomeditor<T extends object> {
   private _tools: AnyTool[] = [];
   private _tool: AnyTool | undefined;
-  private _core: Core;
+  private readonly _core: Core;
   private _onLoad: (() => void) | undefined;
   private _onChange: ((data: T[]) => void) | undefined;
   private _onSelect: ((indices: number[]) => void) | undefined;
@@ -34,13 +34,13 @@ export class Geomeditor<T extends object> {
     this._onLoad?.();
   }
 
-  constructor(source: Source, tools?: (typeof AnyTool | "create" | "modify")[]) {
+  constructor(source: Source, tools?: (typeof AnyTool | "pen" | "edit")[]) {
     this._core = new Core({
       source,
       onSelect: (indices: number[]) => this._onSelect?.(indices),
     });
 
-    this._tools = (tools ?? ["create", "modify"]).map((item) => {
+    this._tools = (tools ?? ["pen", "edit"]).map((item) => {
       const Controller = typeof item === "string" ? defaultTools[item] : item;
       return new Controller(this._core);
     });
@@ -55,9 +55,11 @@ export class Geomeditor<T extends object> {
     this._tool?.refresh();
   }
 
-  public setTool(name?: keyof typeof defaultTools | string, options?: unknown) {
+  public setTool(name?: keyof typeof defaultTools | string, options?: any) {
     if (name !== this._tool?.name || options !== this._tool?.config) {
-      this._tool?.disable();
+      const current = this._tool;
+      this._tool = undefined;
+      current?.disable();
       this._tool = this._tools.find((item) => item.name === name);
 
       if (this._tool) {

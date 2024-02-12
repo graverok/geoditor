@@ -1,18 +1,18 @@
 import { Source } from "./source";
-import { LayerType, GeometryFeature, SourceMouseHandler, SourceEvent } from "../types";
+import { LayerType, Geometry, SourceMouseHandler, SourceEvent, Node, Position } from "../types";
+import * as lib from "../lib";
 
 export class Core {
   private _source: Source;
   private _selected: number[] = [];
+  private _selectedNodes: Omit<Node, "position">[] = [];
   private _hovered: Partial<Record<LayerType, number | undefined>> | undefined;
   public addListener;
   public removeListener;
   public setFeatureState;
   public setNodeState;
   public setCursor;
-  public updateData;
-  public modifyFeatures;
-  private _onSelect!: ((indices: number[]) => void) | undefined;
+  private readonly _onSelect!: ((indices: number[]) => void) | undefined;
 
   constructor(props: { source: Source; onSelect?: (indices: number[]) => void }) {
     this._source = props.source;
@@ -22,8 +22,17 @@ export class Core {
     this.setFeatureState = this._source.setFeatureState;
     this.setNodeState = this._source.setNodeState;
     this.setCursor = this._source.setCursor;
-    this.updateData = this._source.updateData;
-    this.modifyFeatures = this._source.modifyFeatures;
+  }
+
+  public modifyFeatures(ids: number[], updater: (positions: Position[]) => Position[]) {
+    return this._source.features.map((item) => {
+      if (!ids.includes(item.id)) return item;
+
+      return {
+        ...item,
+        coordinates: lib.positions.toCoordinates(updater(lib.getPoints(item)), item.type),
+      } as Geometry;
+    });
   }
 
   public getFeature(id?: number) {
@@ -68,6 +77,21 @@ export class Core {
     return this._selected;
   }
 
+  set selectedNodes(nodes: Omit<Node, "position">[]) {
+    const [toRemove, toAdd] = lib.compareNodes(this._selectedNodes, nodes);
+    toAdd.forEach((node) => this._source.setNodeState(node, { selected: true }));
+    toRemove.forEach((node) => this._source.setNodeState(node, { selected: false }));
+    this._selectedNodes = nodes;
+  }
+
+  get selectedNodes() {
+    return this._selectedNodes;
+  }
+
+  public isNodeSelected(node: Node) {
+    return this._selectedNodes.some((item) => item.parentId === node.parentId && item.id === node.id);
+  }
+
   protected _handleGeometryEnter(e: SourceEvent) {
     const layer = e.layer;
     if (!layer) return;
@@ -104,7 +128,7 @@ export class Core {
     return this._source.features;
   }
 
-  set features(features: GeometryFeature[]) {
+  set features(features: Geometry[]) {
     this._source.features = features;
   }
 
@@ -120,7 +144,7 @@ export class Core {
     return this._source.renderer;
   }
 
-  public render(features: GeometryFeature[], options?: Partial<Record<LayerType, boolean | number[]>>) {
+  public render(features: Geometry[], options?: Partial<Record<LayerType, boolean | number[]>>) {
     const { line = true, fill = true, node = true } = options || {};
 
     const foreground = this._hovered
@@ -130,7 +154,7 @@ export class Core {
     const sorted = [
       ...features.filter((feature) => !foreground.includes(feature.id)),
       ...features.filter((feature) => foreground.includes(feature.id)),
-    ] as GeometryFeature[];
+    ] as Geometry[];
 
     fill && this._source.render("fill", Array.isArray(fill) ? sorted.filter((item) => fill.includes(item.id)) : sorted);
     line && this._source.render("line", Array.isArray(line) ? sorted.filter((item) => line.includes(item.id)) : sorted);

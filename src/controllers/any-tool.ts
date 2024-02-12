@@ -7,19 +7,15 @@ export class AnyTool {
   constructor(core: Core) {
     this.core = core;
   }
-
   get name() {
     return this._name;
   }
-
   get config(): unknown {
     return;
   }
-  public enable(options?: unknown) {
+  public enable(options?: any) {
     return options;
   }
-
   public disable() {}
-
   public refresh() {}
 }

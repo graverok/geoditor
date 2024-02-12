@@ -1,6 +1,5 @@
 import { Map } from "mapbox-gl";
-import { Geomeditor } from "./geomeditor";
-import { MapboxSource } from "./sources";
+import { Geomeditor, MapboxSource } from "./src/main";
 
 const container = document.getElementById("map");
 if (container) {
@@ -24,12 +23,11 @@ if (container) {
 
   const editor = new Geomeditor(new MapboxSource(map));
   editor.setData(JSON.parse(localStorage.getItem("geomeditor-data") || "[]"));
-  editor.setTool("modify");
-  document.getElementById("create")?.removeAttribute("disabled");
-  document.getElementById("modify")?.removeAttribute("disabled");
+  editor.setTool("edit");
+  document.getElementById("pen")?.removeAttribute("disabled");
+  document.getElementById("edit")?.removeAttribute("disabled");
 
   editor.onSelect((indices) => {
-    console.log(indices);
     if (indices.length) {
       document.getElementById("delete")?.removeAttribute("disabled");
     } else {
@@ -38,18 +36,17 @@ if (container) {
   });
 
   editor.onChange((data) => {
-    console.log("update", data);
-    editor.setTool("modify");
+    editor.setTool("edit");
     editor.setData(data);
     localStorage.setItem("geomeditor-data", JSON.stringify(data));
   });
 
-  document.getElementById("modify")?.addEventListener("click", () => {
-    editor.setTool("modify");
+  document.getElementById("edit")?.addEventListener("click", () => {
+    editor.setTool("edit");
   });
 
-  document.getElementById("create")?.addEventListener("click", () => {
-    editor.setTool("create", { props: { color: "#0000FF" } });
+  document.getElementById("pen")?.addEventListener("click", () => {
+    editor.setTool("pen");
   });
 
   document.getElementById("delete")?.addEventListener("click", () => {

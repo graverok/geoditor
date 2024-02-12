@@ -9,9 +9,11 @@ export type AddSourcePayload = {
 export type PaintConfigParams = {
   type: Layer["type"];
   default: { [key in keyof AnyPaint]: AnyPaint[key] };
-  selected?: { [key in keyof AnyPaint]: AnyPaint[key] };
   hovered?: { [key in keyof AnyPaint]: AnyPaint[key] };
+  selected?: { [key in keyof AnyPaint]: AnyPaint[key] };
+  selectedHovered?: { [key in keyof AnyPaint]: AnyPaint[key] };
   active?: { [key in keyof AnyPaint]: AnyPaint[key] };
+  activeHovered?: { [key in keyof AnyPaint]: AnyPaint[key] };
 };
 
 export type PaintConfig = PaintConfigParams[];
@@ -54,7 +56,16 @@ export const defaultConfig: PaintConfig = [
     type: "fill",
     default: {
       "fill-color": ["get", "color"],
-      "fill-opacity": 0.1,
+      "fill-opacity": 0.08,
+    },
+    selected: {
+      "fill-opacity": 0.13,
+    },
+    hovered: {
+      "fill-opacity": 0.15,
+    },
+    active: {
+      "fill-opacity": 0.2,
     },
   },
   {
@@ -62,10 +73,10 @@ export const defaultConfig: PaintConfig = [
     default: {
       "line-width": 1.5,
       "line-color": ["get", "color"],
-      "line-opacity": 0.8,
+      "line-opacity": 1,
     },
     selected: {
-      "line-width": 2,
+      "line-width": 1.5,
       "line-opacity": 1,
     },
     hovered: {
@@ -81,35 +92,31 @@ export const defaultConfig: PaintConfig = [
     type: "circle",
     default: {
       "circle-radius": 2,
-      "circle-stroke-width": 2,
-      "circle-color": "#FFFFFF",
-      "circle-stroke-color": ["get", "color"],
-    },
-    selected: {
+      "circle-stroke-width": 0.5,
       "circle-color": ["get", "color"],
-      "circle-stroke-color": "#FFFFFF",
-      "circle-radius": 2.5,
+      "circle-stroke-color": ["get", "color"],
     },
     hovered: {
+      "circle-radius": 2,
+      "circle-stroke-width": 1.5,
       "circle-stroke-color": ["get", "color"],
       "circle-color": "#FFFFFF",
-      "circle-radius": 2.5,
+    },
+    selected: {
+      "circle-stroke-color": ["get", "color"],
+      "circle-color": "#FFFFFF",
+      "circle-radius": 2.3,
+      "circle-stroke-width": 1.5,
+    },
+    selectedHovered: {
+      "circle-radius": 3,
     },
     active: {
       "circle-stroke-color": "#FFFFFF",
       "circle-color": ["get", "color"],
-      "circle-radius": 2.5,
     },
   },
 ];
-
-const parser = (value: string | number | any[] | any[][]) => {
-  if (Array.isArray(value) && Array.isArray(value[0])) {
-    return value;
-  } else {
-    return [value];
-  }
-};
 
 export const generateLayers = (config: PaintConfig): Omit<Layer, "id">[] => {
   return config.map((item) => {
@@ -122,15 +129,26 @@ export const generateLayers = (config: PaintConfig): Omit<Layer, "id">[] => {
           ...acc,
           [key]: [
             "case",
+            ["all", ["boolean", ["feature-state", "hovered"], false], ["boolean", ["feature-state", "active"], false]],
+            item.activeHovered?.[key] ||
+              item.active?.[key] ||
+              item.selectedHovered?.[key] ||
+              item.hovered?.[key] ||
+              item.selected?.[key] ||
+              item.default[key],
             ["boolean", ["feature-state", "active"], false],
-            ...parser(item.active?.[key] || item.hovered?.[key] || item.selected?.[key] || item.default[key]),
-            // ["all", ["feature-state", "selected"], ["feature-state", "hovered"]],
-            // ...parser(item.selected?.[key] || item.hovered?.[key] || item.default[key]),
+            item.active?.[key] || item.selected?.[key] || item.default[key],
+            [
+              "all",
+              ["boolean", ["feature-state", "hovered"], false],
+              ["boolean", ["feature-state", "selected"], false],
+            ],
+            item.selectedHovered?.[key] || item.hovered?.[key] || item.selected?.[key] || item.default[key],
             ["boolean", ["feature-state", "hovered"], false],
-            ...parser(item.hovered?.[key] || item.default[key]),
+            item.hovered?.[key] || item.default[key],
             ["boolean", ["feature-state", "selected"], false],
-            ...parser(item.selected?.[key] || item.default[key]),
-            ...parser(item.default[key]),
+            item.selected?.[key] || item.default[key],
+            item.default[key],
           ],
         };
       }, {} as AnyPaint),

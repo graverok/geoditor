@@ -1,8 +1,9 @@
-import { Map, MapLayerMouseEvent, MapLayerTouchEvent, MapMouseEvent } from "mapbox-gl";
-import { GeometryFeature, LayerType, Node, Position, SourceEvent, SourceMouseHandler } from "../../types";
+import { AnyLayer, Layer, Map, MapLayerMouseEvent, MapLayerTouchEvent, MapMouseEvent, Point } from "mapbox-gl";
+import { Geometry, LayerType, Node, Position, SourceEvent, SourceMouseHandler } from "../../types";
 import { Feature, LineString, Polygon } from "geojson";
 import { NodeGeoJSONProperties } from "./mapbox-source";
-import { positionTools } from "../../lib";
+import * as lib from "../../lib";
+import { AddSourcePayload } from "./config";
 
 export const eventMapParser = (e: MapMouseEvent): SourceEvent => ({
   position: e.lngLat.toArray(),
@@ -13,7 +14,7 @@ export const eventMapParser = (e: MapMouseEvent): SourceEvent => ({
 
 const sortNodesByDistance = (nodes: Node[], position: Position) => {
   return [...nodes].sort((a, b) =>
-    positionTools.distance(a.position, position) > positionTools.distance(b.position, position) ? 1 : -1,
+    lib.positions.distance(a.position, position) > lib.positions.distance(b.position, position) ? 1 : -1,
   );
 };
 
@@ -33,7 +34,7 @@ export const eventLayerParser =
                   type: item.geometry.type,
                   coordinates: (item as Feature<LineString> | Feature<Polygon>).geometry.coordinates,
                   props: item.properties,
-                }) as GeometryFeature,
+                }) as Geometry,
             )
           : [],
       nodes:
@@ -55,12 +56,12 @@ export const eventLayerParser =
 
 export function addMouseLeaveHandler(
   map: Map | undefined,
-  features: GeometryFeature[],
+  features: Geometry[],
   layer: LayerType,
   mapLayer: string,
   callback: SourceMouseHandler,
 ) {
-  let featurePoint: mapboxgl.Point | undefined;
+  let featurePoint: Point | undefined;
 
   const handleMove = (ev: MapLayerTouchEvent | MapMouseEvent) => {
     featurePoint = ev.point;
@@ -83,7 +84,7 @@ export function addMouseLeaveHandler(
 
 export function addMouseDownHandler(
   map: Map | undefined,
-  features: GeometryFeature[],
+  features: Geometry[],
   layer: LayerType,
   mapLayer: string,
   callback: SourceMouseHandler,
@@ -103,3 +104,35 @@ export function addMouseDownHandler(
     map?.off("mousedown", mapLayer, handler);
   };
 }
+
+export const addSource = (map: Map | undefined, { id, layers, areaLayer }: AddSourcePayload) => {
+  if (!map) return;
+  if (map.getSource(id)) removeSource(map, { id, layers, areaLayer });
+  map.addSource(id, {
+    type: "geojson",
+    data: {
+      type: "FeatureCollection",
+      features: [],
+    },
+  });
+
+  layers.forEach(
+    (layer: Omit<Layer, "id">, index: number) =>
+      map?.addLayer({
+        ...layer,
+        id: `${id}-${index + 1}`,
+        source: id,
+      } as AnyLayer),
+  );
+  areaLayer && map.addLayer({ ...areaLayer, source: id, id } as AnyLayer);
+};
+
+export const removeSource = (map: Map | undefined, { id, layers, areaLayer }: AddSourcePayload) => {
+  if (!map) return;
+  areaLayer && map.getLayer(id) && map.removeLayer(id);
+  layers.forEach(
+    (layer: Omit<Layer, "id">, index: number) =>
+      map?.getLayer(`${id}-${index + 1}`) && map?.removeLayer(`${id}-${index + 1}`),
+  );
+  map.getSource(id) && map.removeSource(id);
+};
