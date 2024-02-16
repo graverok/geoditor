@@ -1,5 +1,5 @@
 import { Source } from "./source";
-import { LayerType, Geometry, SourceMouseHandler, SourceEvent, Node, Position } from "../types";
+import { LayerType, Feature, SourceMouseHandler, SourceEvent, Node } from "../types";
 import * as lib from "../lib";
 
 export class Core {
@@ -13,26 +13,21 @@ export class Core {
   public setNodeState;
   public setCursor;
   private readonly _onSelect!: ((indices: number[]) => void) | undefined;
+  private readonly _getTools!: () => Record<string, (...args: any[]) => void>;
 
-  constructor(props: { source: Source; onSelect?: (indices: number[]) => void }) {
+  constructor(props: {
+    source: Source;
+    getTools: () => Record<string, (o?: any) => void>;
+    onSelect?: (indices: number[]) => void;
+  }) {
     this._source = props.source;
     this._onSelect = props.onSelect;
+    this._getTools = props.getTools;
     this.addListener = this._source.addListener;
     this.removeListener = this._source.removeListener;
     this.setFeatureState = this._source.setFeatureState;
     this.setNodeState = this._source.setNodeState;
     this.setCursor = this._source.setCursor;
-  }
-
-  public modifyFeatures(ids: number[], updater: (positions: Position[]) => Position[]) {
-    return this._source.features.map((item) => {
-      if (!ids.includes(item.id)) return item;
-
-      return {
-        ...item,
-        coordinates: lib.positions.toCoordinates(updater(lib.getPoints(item)), item.type),
-      } as Geometry;
-    });
   }
 
   public getFeature(id?: number) {
@@ -44,12 +39,18 @@ export class Core {
   }
 
   public reset() {
+    this.selectedNodes = [];
     this.selected = [];
     this._hovered = undefined;
+    this.render(this.features, { node: [] });
   }
 
   get hovered() {
     return this._hovered;
+  }
+
+  get tools() {
+    return this._getTools();
   }
 
   private _setHovered(type: LayerType, id?: number) {
@@ -128,12 +129,12 @@ export class Core {
     return this._source.features;
   }
 
-  set features(features: Geometry[]) {
+  set features(features: Feature[]) {
     this._source.features = features;
   }
 
-  set value(data: object[]) {
-    this._source.value = data;
+  set data(data: object[]) {
+    this._source.data = data;
   }
 
   public getSelectedFeatures() {
@@ -144,7 +145,7 @@ export class Core {
     return this._source.renderer;
   }
 
-  public render(features: Geometry[], options?: Partial<Record<LayerType, boolean | number[]>>) {
+  public render(features: Feature[], options?: Partial<Record<LayerType, boolean | number[]>>) {
     const { line = true, fill = true, node = true } = options || {};
 
     const foreground = this._hovered
@@ -154,7 +155,7 @@ export class Core {
     const sorted = [
       ...features.filter((feature) => !foreground.includes(feature.id)),
       ...features.filter((feature) => foreground.includes(feature.id)),
-    ] as Geometry[];
+    ] as Feature[];
 
     fill && this._source.render("fill", Array.isArray(fill) ? sorted.filter((item) => fill.includes(item.id)) : sorted);
     line && this._source.render("line", Array.isArray(line) ? sorted.filter((item) => line.includes(item.id)) : sorted);

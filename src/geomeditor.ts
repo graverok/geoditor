@@ -38,44 +38,52 @@ export class Geomeditor<T extends object> {
     this._core = new Core({
       source,
       onSelect: (indices: number[]) => this._onSelect?.(indices),
+      getTools: () => this.tools,
     });
 
-    this._tools = (tools ?? ["pen", "edit"]).map((item) => {
-      const Controller = typeof item === "string" ? defaultTools[item] : item;
-      return new Controller(this._core);
-    });
+    this._tools = (tools ?? ["pen", "edit"]).reduce((res, item) => {
+      const Tool = typeof item === "string" ? (item in defaultTools ? defaultTools[item] : undefined) : item;
+      if (!Tool) return res;
+      return [...res, new Tool(this._core)];
+    }, [] as AnyTool[]);
 
     source.onChange((data: T[]) => this._onChange?.(data));
     source.onInit(() => this._onInit());
   }
 
-  public setData(data: T[]) {
-    this._core.value = data;
+  set data(data: T[]) {
+    this._core.data = data;
     this._core.selected = this._core.selected.length ? [Math.min(this._core.selected[0], data.length)] : [];
     this._tool?.refresh();
   }
 
-  public setTool(name?: keyof typeof defaultTools | string, options?: any) {
-    if (name !== this._tool?.name || options !== this._tool?.config) {
-      const current = this._tool;
-      this._tool = undefined;
-      current?.disable();
-      this._tool = this._tools.find((item) => item.name === name);
-
-      if (this._tool) {
-        this._isLoaded && this._tool.enable(options);
-      } else {
-        this._core.reset();
-      }
-    }
-  }
-
   get tool() {
-    if (!this._tool) return;
+    if (!this._tool) return undefined;
     return {
       name: this._tool.name,
       config: this._tool.config,
     };
+  }
+
+  get tools() {
+    return this._tools.reduce(
+      (tools, item: AnyTool) =>
+        item && {
+          ...tools,
+          [item.name]: (...args: Parameters<typeof item.enable>) => {
+            this._tool?.disable();
+            this._tool = item;
+            this._isLoaded && item.enable(...args);
+          },
+        },
+      {
+        off: () => {
+          this._tool?.disable();
+          this._tool = undefined;
+          this._core.reset();
+        },
+      } as Record<string, (...args: any[]) => void>,
+    );
   }
 
   get selected() {

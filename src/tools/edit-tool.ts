@@ -1,6 +1,6 @@
 import { AnyTool, Core } from "../controllers";
 import * as lib from "../lib";
-import { Geometry, Node, Position, SourceEvent } from "../types";
+import { Feature, Node, Position, SourceEvent } from "../types";
 
 export class EditTool extends AnyTool {
   private _isDragging = false;
@@ -20,7 +20,7 @@ export class EditTool extends AnyTool {
     this._createPlaceholders = this._createPlaceholders.bind(this);
   }
 
-  private _createPlaceholders(feature: Geometry) {
+  private _createPlaceholders(feature: Feature) {
     if (!this.core.selected.includes(feature.id)) return feature;
     let points = lib.getPoints(feature);
     const placeholders = points.slice(1).map((pos, index) => lib.positions.average(pos, points[index]));
@@ -29,7 +29,7 @@ export class EditTool extends AnyTool {
     return {
       ...feature,
       coordinates: lib.positions.toCoordinates([...points, ...placeholders], feature.type),
-    } as Geometry;
+    } as Feature;
   }
 
   private _renderPlaceholderNodes() {
@@ -78,7 +78,9 @@ export class EditTool extends AnyTool {
       isChanged = true;
       delta = lib.positions.subtract(e.position, ev.position);
       this.core.render(
-        this.core.modifyFeatures([id], (positions) => positions.map((item) => lib.positions.add(item, delta))),
+        lib.updateFeatures(this.core.features, [id], (positions) =>
+          positions.map((item) => lib.positions.add(item, delta)),
+        ),
         { node: this.core.selected },
       );
     };
@@ -88,7 +90,7 @@ export class EditTool extends AnyTool {
       this.core.setFeatureState(id, { active: false });
       this._isDragging = false;
       if (isChanged) {
-        this.core.features = this.core.modifyFeatures([id], (positions) =>
+        this.core.features = lib.updateFeatures(this.core.features, [id], (positions) =>
           positions.map((item) => lib.positions.add(item, delta)),
         );
       }
@@ -168,7 +170,7 @@ export class EditTool extends AnyTool {
       feature = {
         ...feature,
         coordinates: lib.positions.toCoordinates(positions, feature.type),
-      } as Geometry;
+      } as Feature;
     }
 
     const handleNodeMouseMove = (ev: SourceEvent) => {
@@ -187,7 +189,9 @@ export class EditTool extends AnyTool {
         siblingNode?.position || lib.positions.add(node.position, lib.positions.subtract(e.position, ev.position));
 
       feature &&
-        this.core.render(this.core.modifyFeatures([feature.id], updater(nextPosition)), { node: this.core.selected });
+        this.core.render(lib.updateFeatures(this.core.features, [feature.id], updater(nextPosition)), {
+          node: this.core.selected,
+        });
     };
 
     const handleMouseUp = () => {
@@ -207,7 +211,11 @@ export class EditTool extends AnyTool {
           this.core.setNodeState(siblingNode, { hovered: true });
         }
 
-        this.core.features = this.core.modifyFeatures([node.parentId], updater(siblingNode ? undefined : nextPosition));
+        this.core.features = lib.updateFeatures(
+          this.core.features,
+          [node.parentId],
+          updater(siblingNode ? undefined : nextPosition),
+        );
         this.refresh();
       } else {
         this._renderPlaceholderNodes();
@@ -217,7 +225,9 @@ export class EditTool extends AnyTool {
 
     const before = node.id === 1 ? (feature.type === "Polygon" ? positions.length : 0) : node.id - 1;
     const after = node.id === positions.length ? (feature.type === "Polygon" ? 1 : 0) : node.id + 1;
-    this.core.render(this.core.modifyFeatures([feature.id], updater(node.position)), { node: this.core.selected });
+    this.core.render(lib.updateFeatures(this.core.features, [feature.id], updater(node.position)), {
+      node: this.core.selected,
+    });
     this.core.selectedNodes = [node];
     this.core.setNodeState(node, { active: true, hovered: true });
     this.core.addListener("mousemove", handleMouseMove);

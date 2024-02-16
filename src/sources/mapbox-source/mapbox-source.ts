@@ -7,10 +7,10 @@ import {
   MapLayerTouchEvent,
   MapMouseEvent,
 } from "mapbox-gl";
-import { Feature, LineString, Point, Polygon } from "geojson";
+import { Feature as GeoJsonFeature, LineString, Point, Polygon } from "geojson";
 
 import { Source } from "../../controllers";
-import { Geometry, LayerType, Node, SourceEventOptions, SourceMouseHandler } from "../../types";
+import { Feature, LayerType, Node, SourceEventOptions, SourceMouseHandler } from "../../types";
 import * as lib from "../../lib";
 import {
   addMouseDownHandler,
@@ -196,10 +196,10 @@ export class MapboxSource extends Source {
     this._nodes = { ...this._nodes, [featureId]: { ...this._nodes?.[featureId], [currentNode]: globalId } };
   }
 
-  private _reducer(type: LayerType): (acc: Feature[], item: Geometry) => Feature[] {
+  private _reducer(type: LayerType): (acc: GeoJsonFeature[], item: Feature) => GeoJsonFeature[] {
     switch (type) {
       case "fill":
-        return (acc: Feature[] = [], item) =>
+        return (acc: GeoJsonFeature[] = [], item) =>
           item.type === "Polygon"
             ? [
                 ...acc,
@@ -211,12 +211,12 @@ export class MapboxSource extends Source {
                     coordinates: [...item.coordinates.slice(0, item.coordinates.length - 1), item.coordinates[0]],
                   },
                   properties: item.props,
-                } as Feature,
+                } as GeoJsonFeature,
               ]
             : acc;
       case "node":
         this._nodes = [];
-        return (acc: Feature[] = [], item: Geometry) => {
+        return (acc: GeoJsonFeature[] = [], item: Feature) => {
           const positions = lib.getPoints(item);
           return [
             ...acc,
@@ -236,13 +236,13 @@ export class MapboxSource extends Source {
                   id: index + 1,
                   position: JSON.stringify(position),
                 },
-              } as Feature<Point, NodeGeoJSONProperties>;
+              } as GeoJsonFeature<Point, NodeGeoJSONProperties>;
             }),
           ];
         };
 
       default:
-        return (acc: Feature[] = [], item: Geometry) => [
+        return (acc: GeoJsonFeature[] = [], item: Feature) => [
           ...acc,
           {
             id: item.id,
@@ -252,7 +252,7 @@ export class MapboxSource extends Source {
               coordinates: item.coordinates,
             },
             properties: item.props,
-          } as Feature,
+          } as GeoJsonFeature,
         ];
     }
   }
@@ -311,7 +311,7 @@ export class MapboxSource extends Source {
     globalId && this._map?.setFeatureState({ id: globalId, source: this.layerNames.node }, state);
   }
 
-  public render(type: LayerType, features: Geometry[]) {
+  public render(type: LayerType, features: Feature[]) {
     (this._map?.getSource(this.layerNames[type]) as GeoJSONSource)?.setData({
       type: "FeatureCollection",
       features: features.reduce(this._reducer(type), []),
@@ -330,23 +330,22 @@ export class MapboxSource extends Source {
     }
   }
 
-  toGeometry(): Geometry[] {
-    return (this.value as (Feature<LineString> | Feature<Polygon>)[]).map(
+  toGeometry(): Feature[] {
+    return (this.data as (GeoJsonFeature<LineString> | GeoJsonFeature<Polygon>)[]).map(
       (item, index) =>
         ({
           id: index + 1,
           type: item.geometry.type,
           coordinates: item.geometry.coordinates,
           props: item.properties,
-        }) as Geometry,
+        }) as Feature,
     );
   }
 
   toData() {
     const features = this.features;
-    const data = this.value;
     return [
-      ...data.map(
+      ...this.data.map(
         (item, index) =>
           ({
             ...item,
@@ -355,11 +354,11 @@ export class MapboxSource extends Source {
               coordinates: features[index].coordinates,
             },
             properties: features[index].props,
-          }) as Feature<LineString> | Feature<Polygon>,
+          }) as GeoJsonFeature<LineString> | GeoJsonFeature<Polygon>,
       ),
-      ...(features.length > data.length
+      ...(features.length > this.data.length
         ? [
-            ...features.slice(data.length).map(
+            ...features.slice(this.data.length).map(
               (feature) =>
                 ({
                   type: "Feature",
@@ -368,7 +367,7 @@ export class MapboxSource extends Source {
                     coordinates: feature.coordinates,
                   },
                   properties: feature.props,
-                }) as Feature<LineString> | Feature<Polygon>,
+                }) as GeoJsonFeature<LineString> | GeoJsonFeature<Polygon>,
             ),
           ]
         : []),

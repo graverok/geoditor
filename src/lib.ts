@@ -1,9 +1,9 @@
-import { Geometry, Polygon, Position, Node } from "./types";
+import { Feature, Polygon, Position, Node } from "./types";
 
 /**
  * Return unique points to render nodes
  */
-const getPoints = (geometry?: Geometry): Position[] => {
+const getPoints = (geometry?: Feature): Position[] => {
   if (!geometry) return [];
   switch (geometry.type) {
     case "Polygon":
@@ -16,7 +16,7 @@ const getPoints = (geometry?: Geometry): Position[] => {
 /**
  * Return ids of first and last nodes of the line
  */
-const getEndings = (geometry: Geometry | undefined, isReversed: boolean) => {
+const getEndings = (geometry: Feature | undefined, isReversed: boolean) => {
   const positions = getPoints(geometry);
 
   return {
@@ -26,13 +26,24 @@ const getEndings = (geometry: Geometry | undefined, isReversed: boolean) => {
   };
 };
 
-const getNodes = (geometries: Geometry[]) => {
+const getNodes = (geometries: Feature[]) => {
   return geometries.reduce((acc, feature) => {
     return [
       ...acc,
       ...getPoints(feature).map((position, index) => ({ id: index + 1, parentId: feature.id, position }) as Node),
     ];
   }, [] as Node[]);
+};
+
+const updateFeatures = (features: Feature[], ids: number[], updater: (positions: Position[]) => Position[]) => {
+  return features.map((item) => {
+    if (!ids.includes(item.id)) return item;
+
+    return {
+      ...item,
+      coordinates: positions.toCoordinates(updater(getPoints(item)), item.type),
+    } as Feature;
+  });
 };
 
 const positions = {
@@ -56,7 +67,7 @@ const positions = {
     if (!start || !end) return -1;
     return Math.sqrt(Math.pow(end[0] - start[0], 2) + Math.pow(end[1] - start[1], 2));
   },
-  toCoordinates: <T extends Geometry>(positions: Position[], type: T["type"]): T["coordinates"] => {
+  toCoordinates: <T extends Feature>(positions: Position[], type: T["type"]): T["coordinates"] => {
     switch (type) {
       case "Polygon":
         return [[...positions, positions[0]]];
@@ -73,4 +84,4 @@ const compareNodes = <T extends Omit<Node, "position">>(prev: T[], next: T[]): [
   ];
 };
 
-export { compareNodes, getPoints, getEndings, getNodes, positions };
+export { compareNodes, getPoints, getEndings, getNodes, updateFeatures, positions };

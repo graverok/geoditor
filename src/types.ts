@@ -24,7 +24,7 @@ export type Node = {
   position: Position;
 };
 
-export type Geometry<T = LineString | Polygon> = T & {
+export type Feature<T = LineString | Polygon> = T & {
   id: number;
   props?: {
     color?: string;
@@ -33,7 +33,7 @@ export type Geometry<T = LineString | Polygon> = T & {
 
 export type SourceEvent = {
   position: Position;
-  features: Geometry[];
+  features: Feature[];
   nodes: Node[];
   layer?: LayerType;
   originalEvent?: MouseEvent | TouchEvent;

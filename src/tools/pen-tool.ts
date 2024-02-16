@@ -1,9 +1,9 @@
 import { AnyTool, Core } from "../controllers";
 import * as lib from "../lib";
-import { DrawType, Geometry, LayerType, Node, Polygon, Position, SourceEvent } from "../types";
+import { DrawType, Feature, LayerType, Node, Polygon, Position, SourceEvent } from "../types";
 
 export class PenTool extends AnyTool {
-  private _geometry: Geometry | undefined;
+  private _geometry: Feature | undefined;
   private _ignoreMapEvents = false;
   private _isReversed = false;
   private _types: DrawType[] = [];
@@ -38,7 +38,7 @@ export class PenTool extends AnyTool {
     }
   }
 
-  private _setEndingNodes(features: Geometry[]) {
+  private _setEndingNodes(features: Feature[]) {
     let nodes: Omit<Node, "position">[] = [];
     features.forEach((feature) => {
       if (feature?.type !== "LineString") return;
@@ -48,7 +48,7 @@ export class PenTool extends AnyTool {
     this.core.selectedNodes = nodes;
   }
 
-  private _render(feature: Geometry, options: Partial<Record<LayerType, boolean | number[]>>) {
+  private _render(feature: Feature, options: Partial<Record<LayerType, boolean | number[]>>) {
     this.core.render(
       [
         ...this.core.features.slice(0, this.core.selected[0] - 1),
@@ -82,7 +82,7 @@ export class PenTool extends AnyTool {
           this._isReversed ? [e.position, ...positions] : [...positions, e.position],
           asType,
         ),
-      } as Geometry,
+      } as Feature,
       { node: false },
     );
   }
@@ -104,7 +104,7 @@ export class PenTool extends AnyTool {
           ...this._geometry,
           type: asType,
           coordinates: lib.positions.toCoordinates(this._geometry.coordinates, asType),
-        } as Geometry,
+        } as Feature,
         { node: this.core.selected },
       );
       this._renderEndings();
@@ -125,7 +125,7 @@ export class PenTool extends AnyTool {
       type: "LineString",
       coordinates: [Array.from(e.position)],
       props: this._props,
-    } as Geometry;
+    } as Feature;
 
     this.core.selected = [id];
     this.core.render([...this.core.features, this._geometry], { node: this.core.selected });
@@ -146,7 +146,7 @@ export class PenTool extends AnyTool {
     if (node.id === end && Number(this._types.includes("LineString")) + positions.length >= 3) {
       const asType = this._types.includes("LineString") || positions.length < 3 ? "LineString" : "Polygon";
       this._render(
-        { ...this._geometry, type: asType, coordinates: lib.positions.toCoordinates(positions, asType) } as Geometry,
+        { ...this._geometry, type: asType, coordinates: lib.positions.toCoordinates(positions, asType) } as Feature,
         { node: false },
       );
     }
@@ -158,7 +158,7 @@ export class PenTool extends AnyTool {
             ...this._geometry,
             type: "Polygon",
             coordinates: lib.positions.toCoordinates(positions, "Polygon"),
-          } as Geometry,
+          } as Feature,
           { node: false },
         );
     }
@@ -271,7 +271,7 @@ export class PenTool extends AnyTool {
         ...activeGeometry,
         type: asType,
         coordinates: lib.positions.toCoordinates(positions, asType) as Position[][],
-      } as Geometry,
+      } as Feature,
       ...this.core.features.slice(this.core.selected[0]),
     ];
   }

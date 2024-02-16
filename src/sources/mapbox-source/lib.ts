@@ -1,6 +1,6 @@
 import { AnyLayer, Layer, Map, MapLayerMouseEvent, MapLayerTouchEvent, MapMouseEvent, Point } from "mapbox-gl";
-import { Geometry, LayerType, Node, Position, SourceEvent, SourceMouseHandler } from "../../types";
-import { Feature, LineString, Polygon } from "geojson";
+import { Feature, LayerType, Node, Position, SourceEvent, SourceMouseHandler } from "../../types";
+import { Feature as GeoJsonFeature, LineString, Polygon } from "geojson";
 import { NodeGeoJSONProperties } from "./mapbox-source";
 import * as lib from "../../lib";
 import { AddSourcePayload } from "./config";
@@ -32,9 +32,9 @@ export const eventLayerParser =
                 ({
                   id: item.id,
                   type: item.geometry.type,
-                  coordinates: (item as Feature<LineString> | Feature<Polygon>).geometry.coordinates,
+                  coordinates: (item as GeoJsonFeature<LineString> | GeoJsonFeature<Polygon>).geometry.coordinates,
                   props: item.properties,
-                }) as Geometry,
+                }) as Feature,
             )
           : [],
       nodes:
@@ -56,7 +56,7 @@ export const eventLayerParser =
 
 export function addMouseLeaveHandler(
   map: Map | undefined,
-  features: Geometry[],
+  features: Feature[],
   layer: LayerType,
   mapLayer: string,
   callback: SourceMouseHandler,
@@ -84,7 +84,7 @@ export function addMouseLeaveHandler(
 
 export function addMouseDownHandler(
   map: Map | undefined,
-  features: Geometry[],
+  features: Feature[],
   layer: LayerType,
   mapLayer: string,
   callback: SourceMouseHandler,

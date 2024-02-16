@@ -1,7 +1,7 @@
 import { Core } from "./core";
 
 export class AnyTool {
-  protected _name: string | undefined;
+  protected _name!: string;
   public core: Core;
 
   constructor(core: Core) {
@@ -13,9 +13,7 @@ export class AnyTool {
   get config(): unknown {
     return;
   }
-  public enable(options?: any) {
-    return options;
-  }
+  public enable(...args: any[]) {}
   public disable() {}
   public refresh() {}
 }

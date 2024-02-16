@@ -22,10 +22,11 @@ if (container) {
   });
 
   const editor = new Geomeditor(new MapboxSource(map));
-  editor.setData(JSON.parse(localStorage.getItem("geomeditor-data") || "[]"));
-  editor.setTool("edit");
+  editor.data = JSON.parse(localStorage.getItem("geomeditor-data") || "[]");
+  editor.tools.edit();
   document.getElementById("pen")?.removeAttribute("disabled");
   document.getElementById("edit")?.removeAttribute("disabled");
+  document.getElementById("off")?.removeAttribute("disabled");
 
   editor.onSelect((indices) => {
     if (indices.length) {
@@ -36,17 +37,17 @@ if (container) {
   });
 
   editor.onChange((data) => {
-    editor.setTool("edit");
-    editor.setData(data);
+    editor.tools.edit();
+    editor.data = data;
     localStorage.setItem("geomeditor-data", JSON.stringify(data));
   });
 
   document.getElementById("edit")?.addEventListener("click", () => {
-    editor.setTool("edit");
+    editor.tools.edit();
   });
 
   document.getElementById("pen")?.addEventListener("click", () => {
-    editor.setTool("pen");
+    editor.tools.pen({ type: "Polygon" });
   });
 
   document.getElementById("delete")?.addEventListener("click", () => {
@@ -54,7 +55,11 @@ if (container) {
     if (!selected.length) return;
     const currentData = JSON.parse(localStorage.getItem("geomeditor-data") || "[]");
     const data = currentData.filter((_: unknown, index: number) => !selected.includes(index));
-    editor.setData(data);
+    editor.data = data;
     localStorage.setItem("geomeditor-data", JSON.stringify(data));
+  });
+
+  document.getElementById("off")?.addEventListener("click", () => {
+    editor.tools.off();
   });
 }
