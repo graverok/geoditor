@@ -37,13 +37,16 @@ type Subscription = {
   layer?: string;
 };
 
-export type NodeGeoJSONProperties = Omit<Node, "position"> & { position: string } & Record<string, any>;
+export type NodeGeoJSONProperties = Omit<Node, "position" | "indices"> & { position: string; indices: string } & Record<
+    string,
+    any
+  >;
 
 type ConstructorParams = [number | string, Map, Options] | [Map, Options] | [number | string, Map] | [Map];
 
 export class MapboxSource extends Source {
   private _map: Map | undefined;
-  private _nodes: Record<number, Record<number, string>> = {};
+  private _nodes: Record<number, Record<string, string>> = {};
   private readonly _options: Options | undefined;
   private _removeSources!: () => void;
   private _subscriptions: Subscription[] = [];
@@ -55,9 +58,9 @@ export class MapboxSource extends Source {
         ? ([params[0], params[1], params[2]] as [number | string, Map, Options | undefined])
         : ([undefined, params[0], params[1]] as [undefined, Map, Options | undefined]);
     super({
-      node: `@@map-editor-${id ?? ""}-node`,
+      point: `@@map-editor-${id ?? ""}-point`,
       line: `@@map-editor-${id ?? ""}-line`,
-      fill: `@@map-editor-${id ?? ""}-fill`,
+      plane: `@@map-editor-${id ?? ""}-plane`,
     });
     this.addListener = this.addListener.bind(this);
     this.removeListener = this.removeListener.bind(this);
@@ -81,7 +84,7 @@ export class MapboxSource extends Source {
 
     const sources = [
       {
-        id: this.layerNames.fill,
+        id: this.layerNames.plane,
         layers: fillLayers,
         areaLayer: fillLayers.length ? areaFillLayer : undefined,
       },
@@ -97,7 +100,7 @@ export class MapboxSource extends Source {
         },
       },
       {
-        id: this.layerNames.node,
+        id: this.layerNames.point,
         layers: pointLayers,
         areaLayer: {
           ...areaPointLayer,
@@ -192,13 +195,13 @@ export class MapboxSource extends Source {
     });
   }
 
-  private _pushNode(globalId: string, featureId: number, currentNode: number) {
-    this._nodes = { ...this._nodes, [featureId]: { ...this._nodes?.[featureId], [currentNode]: globalId } };
+  private _pushNode(globalId: string, node: Node) {
+    this._nodes = { ...this._nodes, [node.fid]: { ...this._nodes?.[node.fid], [node.indices.join(".")]: globalId } };
   }
 
   private _reducer(type: LayerType): (acc: GeoJsonFeature[], item: Feature) => GeoJsonFeature[] {
     switch (type) {
-      case "fill":
+      case "plane":
         return (acc: GeoJsonFeature[] = [], item) =>
           item.type === "Polygon"
             ? [
@@ -214,27 +217,27 @@ export class MapboxSource extends Source {
                 } as GeoJsonFeature,
               ]
             : acc;
-      case "node":
+      case "point":
         this._nodes = [];
         return (acc: GeoJsonFeature[] = [], item: Feature) => {
-          const positions = lib.getPoints(item);
+          const nodes = lib.createNodes([item]);
           return [
             ...acc,
-            ...positions.map((position, index) => {
-              this._pushNode(String(acc.length + index + 1), item.id, index + 1);
+            ...nodes.map((node, index) => {
+              this._pushNode(String(acc.length + index + 1), node);
 
               return {
                 id: String(acc.length + index + 1),
                 type: "Feature",
                 geometry: {
                   type: "Point",
-                  coordinates: position,
+                  coordinates: node.position,
                 },
                 properties: {
                   ...item.props,
-                  parentId: item.id,
-                  id: index + 1,
-                  position: JSON.stringify(position),
+                  fid: node.fid,
+                  indices: JSON.stringify(node.indices),
+                  position: JSON.stringify(node.position),
                 },
               } as GeoJsonFeature<Point, NodeGeoJSONProperties>;
             }),
@@ -302,13 +305,14 @@ export class MapboxSource extends Source {
   public setFeatureState(id: number | undefined, state: Record<string, boolean>) {
     if (!id) return;
     this._map?.setFeatureState({ id, source: this.layerNames.line }, state);
-    this._map?.setFeatureState({ id, source: this.layerNames.fill }, state);
+    this._map?.setFeatureState({ id, source: this.layerNames.plane }, state);
   }
 
-  public setNodeState({ id, parentId }: Node, state: Record<string, boolean>) {
-    if (!parentId || !id) return;
-    const globalId = this._nodes[parentId]?.[id];
-    globalId && this._map?.setFeatureState({ id: globalId, source: this.layerNames.node }, state);
+  public setNodeState({ indices, fid }: Node, state: Record<string, boolean>) {
+    if (!fid || !indices.length) return;
+    const globalId = this._nodes[fid]?.[indices.join(".")];
+
+    globalId && this._map?.setFeatureState({ id: globalId, source: this.layerNames.point }, state);
   }
 
   public render(type: LayerType, features: Feature[]) {

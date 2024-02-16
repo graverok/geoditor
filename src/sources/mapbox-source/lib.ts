@@ -26,7 +26,7 @@ export const eventLayerParser =
       originalEvent: e.originalEvent,
       layer,
       features:
-        layer !== "node"
+        layer !== "point"
           ? (e.features || []).map(
               (item) =>
                 ({
@@ -38,14 +38,14 @@ export const eventLayerParser =
             )
           : [],
       nodes:
-        layer === "node"
+        layer === "point"
           ? sortNodesByDistance(
               (e.features || []).map((item) => {
                 const properties = item.properties as NodeGeoJSONProperties;
                 return {
-                  id: properties.id,
-                  parentId: properties.parentId,
+                  fid: properties.fid,
                   position: JSON.parse(properties.position),
+                  indices: JSON.parse(properties.indices),
                 };
               }),
               e.lngLat.toArray(),

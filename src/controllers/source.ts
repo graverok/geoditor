@@ -14,7 +14,7 @@ export abstract class Source {
   abstract removeListener(...params: RenderListenerParams): void;
   abstract setCursor(value: string): (() => void) | undefined;
   abstract setFeatureState(id: number | undefined, state: Record<string, boolean>): void;
-  abstract setNodeState(node: Pick<Node, "id" | "parentId">, state: Record<string, boolean>): void;
+  abstract setNodeState(node: Pick<Node, "indices" | "fid">, state: Record<string, boolean>): void;
   abstract remove(): void;
   abstract render(layer: LayerType, features: (Feature | Node)[]): void;
   abstract get renderer(): any;

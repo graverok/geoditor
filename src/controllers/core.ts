@@ -42,7 +42,7 @@ export class Core {
     this.selectedNodes = [];
     this.selected = [];
     this._hovered = undefined;
-    this.render(this.features, { node: [] });
+    this.render(this.features, { point: [] });
   }
 
   get hovered() {
@@ -90,26 +90,26 @@ export class Core {
   }
 
   public isNodeSelected(node: Node) {
-    return this._selectedNodes.some((item) => item.parentId === node.parentId && item.id === node.id);
+    return this._selectedNodes.some((item) => item.fid === node.fid && lib.isArrayEqual(node.indices, item.indices));
   }
 
   protected _handleGeometryEnter(e: SourceEvent) {
     const layer = e.layer;
     if (!layer) return;
-    let ids = layer !== "node" ? e.features.map((f) => f.id) : e.nodes.map((f) => f.parentId);
+    let ids = layer !== "point" ? e.features.map((f) => f.id) : e.nodes.map((f) => f.fid);
     this._setHovered(
       layer,
       ids.find((id) => this._selected.includes(id)) ||
-        ids.find((id) => [this._hovered?.node, this._hovered?.line, this.hovered?.fill].includes(id)) ||
+        ids.find((id) => [this._hovered?.point, this._hovered?.line, this.hovered?.plane].includes(id)) ||
         ids[0],
     );
 
     const handleMouseMove: SourceMouseHandler = (ev) => {
-      let ids = layer !== "node" ? ev.features.map((f) => f.id) : ev.nodes.map((f) => f.parentId);
+      let ids = layer !== "point" ? ev.features.map((f) => f.id) : ev.nodes.map((f) => f.fid);
       this._setHovered(
         layer,
         ids.find((id) => this._selected.includes(id)) ||
-          ids.find((id) => [this._hovered?.node, this._hovered?.line, this.hovered?.fill].includes(id)) ||
+          ids.find((id) => [this._hovered?.point, this._hovered?.line, this.hovered?.plane].includes(id)) ||
           ids[0],
       );
     };
@@ -146,10 +146,10 @@ export class Core {
   }
 
   public render(features: Feature[], options?: Partial<Record<LayerType, boolean | number[]>>) {
-    const { line = true, fill = true, node = true } = options || {};
+    const { line = true, plane = true, point = true } = options || {};
 
     const foreground = this._hovered
-      ? [this._hovered.node || this._hovered.line || this._hovered.fill]
+      ? [this._hovered.point || this._hovered.line || this._hovered.plane]
       : this._selected;
 
     const sorted = [
@@ -157,21 +157,23 @@ export class Core {
       ...features.filter((feature) => foreground.includes(feature.id)),
     ] as Feature[];
 
-    fill && this._source.render("fill", Array.isArray(fill) ? sorted.filter((item) => fill.includes(item.id)) : sorted);
+    plane &&
+      this._source.render("plane", Array.isArray(plane) ? sorted.filter((item) => plane.includes(item.id)) : sorted);
     line && this._source.render("line", Array.isArray(line) ? sorted.filter((item) => line.includes(item.id)) : sorted);
-    node && this._source.render("node", Array.isArray(node) ? sorted.filter((item) => node.includes(item.id)) : sorted);
+    point &&
+      this._source.render("point", Array.isArray(point) ? sorted.filter((item) => point.includes(item.id)) : sorted);
   }
 
   private _addHandlers() {
-    this._source.addListener("mouseenter", "node", this._handleGeometryEnter.bind(this));
+    this._source.addListener("mouseenter", "point", this._handleGeometryEnter.bind(this));
     this._source.addListener("mouseenter", "line", this._handleGeometryEnter.bind(this));
-    this._source.addListener("mouseenter", "fill", this._handleGeometryEnter.bind(this));
+    this._source.addListener("mouseenter", "plane", this._handleGeometryEnter.bind(this));
   }
 
   private _removeHandlers() {
-    this._source.removeListener("mouseenter", "node", this._handleGeometryEnter);
+    this._source.removeListener("mouseenter", "point", this._handleGeometryEnter);
     this._source.removeListener("mouseenter", "line", this._handleGeometryEnter);
-    this._source.removeListener("mouseenter", "fill", this._handleGeometryEnter);
+    this._source.removeListener("mouseenter", "plane", this._handleGeometryEnter);
   }
 
   public remove() {

@@ -37,7 +37,7 @@ if (container) {
   });
 
   editor.onChange((data) => {
-    editor.tools.edit();
+    // editor.tools.edit();
     editor.data = data;
     localStorage.setItem("geomeditor-data", JSON.stringify(data));
   });
@@ -47,7 +47,7 @@ if (container) {
   });
 
   document.getElementById("pen")?.addEventListener("click", () => {
-    editor.tools.pen({ type: "Polygon" });
+    editor.tools.pen();
   });
 
   document.getElementById("delete")?.addEventListener("click", () => {

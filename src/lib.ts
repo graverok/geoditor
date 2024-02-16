@@ -1,48 +1,81 @@
 import { Feature, Polygon, Position, Node } from "./types";
+type MultiPosition = Position | MultiPosition[];
 
-/**
- * Return unique points to render nodes
- */
-const getPoints = (geometry?: Feature): Position[] => {
-  if (!geometry) return [];
-  switch (geometry.type) {
+const getPoints = (feature: Feature | undefined): MultiPosition[] => {
+  if (!feature) return [];
+
+  switch (feature.type) {
+    case "MultiPolygon":
+      return feature.coordinates.map((g) => g.map((c) => c.slice(0, c.length - 1)));
     case "Polygon":
-      return [...geometry.coordinates[0].slice(0, geometry.coordinates[0].length - 1)];
+      return feature.coordinates.map((c) => c.slice(0, c.length - 1));
     default:
-      return [...geometry.coordinates];
+      return feature.coordinates;
   }
 };
 
-/**
- * Return ids of first and last nodes of the line
- */
-const getEndings = (geometry: Feature | undefined, isReversed: boolean) => {
-  const positions = getPoints(geometry);
+const getGeometry = (indices: number[], points: MultiPosition[]) => {
+  let _indices = Array.from(indices);
+  let _points: MultiPosition[] = Array.from(points);
+  while (_indices.length > 0 && Array.isArray(_points[0])) {
+    _points = _points[_indices[0]] as MultiPosition[];
+    _indices = [..._indices.slice(1)];
+  }
+  return _points as Position[];
+};
+
+const updateFeature = (
+  feature: Feature,
+  indices: number[],
+  updater: (positions: Position[]) => Position[],
+): Feature => {
+  const mapper = (data: Position[] | MultiPosition[], _indices: number[]): MultiPosition[] => {
+    if (_indices.length === 0) return positions.toCoords(updater(data as Position[]), feature.type);
+    return [
+      ...data.slice(0, _indices[0]),
+      mapper(data[_indices[0]] as MultiPosition[], _indices.slice(1)),
+      ...data.slice(_indices[0] + 1),
+    ];
+  };
 
   return {
-    end: isReversed ? 1 : positions.length,
-    start: !isReversed ? 1 : positions.length,
-    positions,
-  };
+    ...feature,
+    coordinates: mapper(getPoints(feature), indices),
+  } as Feature;
 };
 
-const getNodes = (geometries: Feature[]) => {
-  return geometries.reduce((acc, feature) => {
-    return [
+const createNodes = (features: Feature[]): Node[] => {
+  const reducer =
+    (feature: Feature, indices: number[]) =>
+    (acc: Node[], item: Position | MultiPosition[], index: number): Node[] => [
       ...acc,
-      ...getPoints(feature).map((position, index) => ({ id: index + 1, parentId: feature.id, position }) as Node),
+      ...(Array.isArray(item[0])
+        ? (item as MultiPosition[]).reduce(reducer(feature, [index]), acc)
+        : [
+            {
+              fid: feature.id,
+              position: item as Position,
+              indices: [...indices, index],
+            },
+          ]),
     ];
-  }, [] as Node[]);
+
+  return features.reduce(
+    (acc, feature) => [...acc, ...getPoints(feature).reduce(reducer(feature, []), acc)],
+    [] as Node[],
+  );
 };
 
-const updateFeatures = (features: Feature[], ids: number[], updater: (positions: Position[]) => Position[]) => {
+const moveFeatures = (features: Feature[], ids: number[], delta: Position) => {
   return features.map((item) => {
     if (!ids.includes(item.id)) return item;
 
-    return {
-      ...item,
-      coordinates: positions.toCoordinates(updater(getPoints(item)), item.type),
-    } as Feature;
+    const mapper = (data: MultiPosition, delta: Position): MultiPosition[] | MultiPosition => {
+      if (!Array.isArray(data[0])) return positions.add(data as Position, delta);
+      return data.map((item) => mapper(item as MultiPosition, delta));
+    };
+
+    return { ...item, coordinates: mapper(item.coordinates, delta) } as Feature;
   });
 };
 
@@ -75,13 +108,27 @@ const positions = {
         return positions;
     }
   },
+  toCoords: (points: Position[], type: Feature["type"]) => {
+    switch (type) {
+      case "Polygon":
+      case "MultiPolygon":
+        return [...points, points[0]];
+      default:
+        return points;
+    }
+  },
+};
+
+const isArrayEqual = (a: number[], b: number[]) => {
+  if (a.length !== b.length) return false;
+  return !a.some((x, i) => x !== b[i]);
 };
 
 const compareNodes = <T extends Omit<Node, "position">>(prev: T[], next: T[]): [T[], T[]] => {
   return [
-    prev.filter((item) => !next.some((node) => node.id === item.id && node.parentId === item.parentId)),
-    next.filter((item) => !prev.some((node) => node.id === item.id && node.parentId === item.parentId)),
+    prev.filter((item) => !next.some((node) => node.fid === item.fid && isArrayEqual(node.indices, item.indices))),
+    next.filter((item) => !prev.some((node) => node.fid === item.fid && isArrayEqual(node.indices, item.indices))),
   ];
 };
 
-export { compareNodes, getPoints, getEndings, getNodes, updateFeatures, positions };
+export { isArrayEqual, compareNodes, getPoints, createNodes, getGeometry, moveFeatures, updateFeature, positions };

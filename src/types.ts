@@ -10,21 +10,30 @@ export type LineString = {
   coordinates: Position[];
 };
 
+export type MultiLineString = {
+  type: "MultiLineString";
+  coordinates: Position[][];
+};
+
 export type Polygon = {
   type: "Polygon";
   coordinates: Position[][];
 };
 
-export type DrawType = "LineString" | "Polygon";
-export type LayerType = "node" | "line" | "fill";
+export type MultiPolygon = {
+  type: "MultiPolygon";
+  coordinates: Position[][][];
+};
 
+export type DrawType = "LineString" | "Polygon" | "MultiLineString";
+export type LayerType = "point" | "line" | "plane";
 export type Node = {
-  id: number;
-  parentId: number;
+  fid: number;
+  indices: number[];
   position: Position;
 };
 
-export type Feature<T = LineString | Polygon> = T & {
+export type Feature<T = LineString | Polygon | MultiLineString | MultiPolygon> = T & {
   id: number;
   props?: {
     color?: string;
