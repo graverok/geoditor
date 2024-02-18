@@ -2,8 +2,14 @@ import { AnyLayer, Layer, Map, MapLayerMouseEvent, MapLayerTouchEvent, MapMouseE
 import { Feature, LayerType, Node, Position, SourceEvent, SourceMouseHandler } from "../../types";
 import { Feature as GeoJsonFeature, LineString, Polygon } from "geojson";
 import { NodeGeoJSONProperties } from "./mapbox-source";
-import * as lib from "../../lib";
 import { AddSourcePayload } from "./config";
+import * as lib from "../../lib";
+
+const sortNodesByDistance = (nodes: Node[], position: Position) => {
+  return [...nodes].sort((a, b) =>
+    lib.math.distance(a.position, position) > lib.math.distance(b.position, position) ? 1 : -1,
+  );
+};
 
 export const eventMapParser = (e: MapMouseEvent): SourceEvent => ({
   position: e.lngLat.toArray(),
@@ -11,12 +17,6 @@ export const eventMapParser = (e: MapMouseEvent): SourceEvent => ({
   features: [],
   nodes: [],
 });
-
-const sortNodesByDistance = (nodes: Node[], position: Position) => {
-  return [...nodes].sort((a, b) =>
-    lib.positions.distance(a.position, position) > lib.positions.distance(b.position, position) ? 1 : -1,
-  );
-};
 
 export const eventLayerParser =
   (layer: LayerType) =>
@@ -41,11 +41,12 @@ export const eventLayerParser =
         layer === "point"
           ? sortNodesByDistance(
               (e.features || []).map((item) => {
-                const properties = item.properties as NodeGeoJSONProperties;
+                const { position, indices, fid, ...rest } = item.properties as NodeGeoJSONProperties;
                 return {
-                  fid: properties.fid,
-                  position: JSON.parse(properties.position),
-                  indices: JSON.parse(properties.indices),
+                  fid,
+                  position: JSON.parse(position),
+                  indices: JSON.parse(indices),
+                  props: rest,
                 };
               }),
               e.lngLat.toArray(),
@@ -56,7 +57,6 @@ export const eventLayerParser =
 
 export function addMouseLeaveHandler(
   map: Map | undefined,
-  features: Feature[],
   layer: LayerType,
   mapLayer: string,
   callback: SourceMouseHandler,
@@ -84,7 +84,6 @@ export function addMouseLeaveHandler(
 
 export function addMouseDownHandler(
   map: Map | undefined,
-  features: Feature[],
   layer: LayerType,
   mapLayer: string,
   callback: SourceMouseHandler,
@@ -105,6 +104,83 @@ export function addMouseDownHandler(
   };
 }
 
+export function addClickHandler(
+  map: Map | undefined,
+  layer: LayerType | undefined,
+  mapLayer: string | undefined,
+  callback: SourceMouseHandler,
+) {
+  let isDblClickEnabled: boolean | undefined;
+  let point: { x: number; y: number } | undefined;
+  const handleDown = (e: MapMouseEvent | MapLayerMouseEvent) => {
+    point = {
+      x: e.originalEvent.pageX,
+      y: e.originalEvent.pageY,
+    };
+    isDblClickEnabled = map?.doubleClickZoom.isEnabled();
+    isDblClickEnabled && map?.doubleClickZoom.disable();
+    document.addEventListener("mousemove", handleMove);
+    if (mapLayer) {
+      map?.on("mouseup", mapLayer, handleUp);
+    } else {
+      map?.on("mouseup", handleUp);
+    }
+  };
+
+  const handleMove = (ev: MouseEvent) => {
+    if (!point) return;
+    if (Math.abs(ev.pageX - point.x) <= 3 && Math.abs(ev.pageY - point.y) <= 3) return;
+    isDblClickEnabled && map?.doubleClickZoom.enable();
+    isDblClickEnabled = false;
+    document.removeEventListener("mousemove", handleMove);
+    if (mapLayer) {
+      map?.off("mouseup", mapLayer, handleUp);
+    } else {
+      map?.off("mouseup", handleUp);
+    }
+  };
+
+  const handleUp = (e: MapMouseEvent | MapLayerMouseEvent | MapLayerTouchEvent) => {
+    document.removeEventListener("mousemove", handleMove);
+    if (mapLayer) {
+      map?.off("mouseup", mapLayer, handleUp);
+    } else {
+      map?.off("mouseup", handleUp);
+    }
+    setTimeout(() => {
+      isDblClickEnabled && map?.doubleClickZoom.enable();
+      isDblClickEnabled = false;
+    });
+
+    if (layer) {
+      callback(eventLayerParser(layer)(e as MapLayerTouchEvent | MapLayerMouseEvent));
+    } else {
+      callback(eventMapParser(e as MapMouseEvent));
+    }
+  };
+
+  if (mapLayer) {
+    map?.on("mousedown", mapLayer, handleDown);
+  } else {
+    map?.on("mousedown", handleDown);
+  }
+
+  return () => {
+    document.removeEventListener("mousemove", handleMove);
+    if (mapLayer) {
+      map?.off("mouseup", mapLayer, handleUp);
+      map?.off("mousedown", mapLayer, handleDown);
+    } else {
+      map?.off("mouseup", handleUp);
+      map?.off("mousedown", handleDown);
+    }
+    setTimeout(() => {
+      isDblClickEnabled && map?.doubleClickZoom.enable();
+      isDblClickEnabled = false;
+    });
+  };
+}
+
 export const addSource = (map: Map | undefined, { id, layers, areaLayer }: AddSourcePayload) => {
   if (!map) return;
   if (map.getSource(id)) removeSource(map, { id, layers, areaLayer });
@@ -122,7 +198,7 @@ export const addSource = (map: Map | undefined, { id, layers, areaLayer }: AddSo
         ...layer,
         id: `${id}-${index + 1}`,
         source: id,
-      } as AnyLayer),
+      } as AnyLayer & { id: string }),
   );
   areaLayer && map.addLayer({ ...areaLayer, source: id, id } as AnyLayer);
 };

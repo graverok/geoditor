@@ -12,17 +12,14 @@ export class Core {
   public setFeatureState;
   public setNodeState;
   public setCursor;
-  private readonly _onSelect!: ((indices: number[]) => void) | undefined;
+  private readonly _onSelect!: (() => void) | undefined;
   private readonly _getTools!: () => Record<string, (...args: any[]) => void>;
 
-  constructor(props: {
-    source: Source;
-    getTools: () => Record<string, (o?: any) => void>;
-    onSelect?: (indices: number[]) => void;
-  }) {
+  constructor(props: { source: Source; getTools: () => Record<string, (o?: any) => void>; onSelect?: () => void }) {
     this._source = props.source;
     this._onSelect = props.onSelect;
     this._getTools = props.getTools;
+    this._handleGeometryEnter = this._handleGeometryEnter.bind(this);
     this.addListener = this._source.addListener;
     this.removeListener = this._source.removeListener;
     this.setFeatureState = this._source.setFeatureState;
@@ -36,13 +33,15 @@ export class Core {
 
   public init() {
     this._addHandlers();
+    this.render("features", this.features);
   }
 
   public reset() {
     this.selectedNodes = [];
     this.selected = [];
     this._hovered = undefined;
-    this.render(this.features, { point: [] });
+    this.render("features", this.features);
+    this.render("nodes", []);
   }
 
   get hovered() {
@@ -71,7 +70,7 @@ export class Core {
     ids.forEach((id) => !this._selected.includes(id) && this.setFeatureState(id, { selected: true }));
 
     this._selected = Array.from(ids);
-    this._onSelect?.(this._selected.map((id) => id - 1));
+    this._onSelect?.();
   }
 
   get selected() {
@@ -133,10 +132,6 @@ export class Core {
     this._source.features = features;
   }
 
-  set data(data: object[]) {
-    this._source.data = data;
-  }
-
   public getSelectedFeatures() {
     return this._source.features.filter((item) => this._selected.includes(item.id));
   }
@@ -145,29 +140,28 @@ export class Core {
     return this._source.renderer;
   }
 
-  public render(features: Feature[], options?: Partial<Record<LayerType, boolean | number[]>>) {
-    const { line = true, plane = true, point = true } = options || {};
+  public render(type: "features" | "nodes", items: Feature[] | Node[]) {
+    switch (type) {
+      case "features":
+        const foreground = this._hovered
+          ? [this._hovered.point || this._hovered.line || this._hovered.plane]
+          : this._selected;
 
-    const foreground = this._hovered
-      ? [this._hovered.point || this._hovered.line || this._hovered.plane]
-      : this._selected;
+        const sorted = [
+          ...(items as Feature[]).filter((feature) => !foreground.includes(feature.id)),
+          ...(items as Feature[]).filter((feature) => foreground.includes(feature.id)),
+        ] as Feature[];
 
-    const sorted = [
-      ...features.filter((feature) => !foreground.includes(feature.id)),
-      ...features.filter((feature) => foreground.includes(feature.id)),
-    ] as Feature[];
-
-    plane &&
-      this._source.render("plane", Array.isArray(plane) ? sorted.filter((item) => plane.includes(item.id)) : sorted);
-    line && this._source.render("line", Array.isArray(line) ? sorted.filter((item) => line.includes(item.id)) : sorted);
-    point &&
-      this._source.render("point", Array.isArray(point) ? sorted.filter((item) => point.includes(item.id)) : sorted);
+        return this._source.renderFeatures(sorted);
+      case "nodes":
+        return this._source.renderNodes(items as Node[]);
+    }
   }
 
   private _addHandlers() {
-    this._source.addListener("mouseenter", "point", this._handleGeometryEnter.bind(this));
-    this._source.addListener("mouseenter", "line", this._handleGeometryEnter.bind(this));
-    this._source.addListener("mouseenter", "plane", this._handleGeometryEnter.bind(this));
+    this._source.addListener("mouseenter", "point", this._handleGeometryEnter);
+    this._source.addListener("mouseenter", "line", this._handleGeometryEnter);
+    this._source.addListener("mouseenter", "plane", this._handleGeometryEnter);
   }
 
   private _removeHandlers() {

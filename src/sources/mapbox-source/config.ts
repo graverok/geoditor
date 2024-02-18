@@ -1,4 +1,4 @@
-import { AnyPaint, Layer } from "mapbox-gl";
+import { AnyLayout, AnyPaint, Layer } from "mapbox-gl";
 
 export type AddSourcePayload = {
   id: string;
@@ -6,21 +6,15 @@ export type AddSourcePayload = {
   areaLayer?: Omit<Layer, "id">;
 };
 
-export type PaintConfigParams = {
-  type: Layer["type"];
-  default: { [key in keyof AnyPaint]: AnyPaint[key] };
-  hovered?: { [key in keyof AnyPaint]: AnyPaint[key] };
-  selected?: { [key in keyof AnyPaint]: AnyPaint[key] };
-  selectedHovered?: { [key in keyof AnyPaint]: AnyPaint[key] };
-  active?: { [key in keyof AnyPaint]: AnyPaint[key] };
-  activeHovered?: { [key in keyof AnyPaint]: AnyPaint[key] };
-};
+type ConfigParams<T> = { default: { [key in keyof T]: T[key] } } & Partial<
+  Record<"hovered" | "selected" | "selectedHovered" | "active" | "activeHovered", { [key in keyof T]: T[key] }>
+>;
 
-export type PaintConfig = PaintConfigParams[];
+type LayerConfig = { type: Layer["type"]; paint: ConfigParams<AnyPaint>; layout?: AnyLayout };
 
 export type Options = {
-  paintConfig?: PaintConfig;
-  layerStyles?: Layer[];
+  config?: LayerConfig[];
+  layerStyles?: Omit<Layer, "id">[];
   pointArea?: number;
   lineArea?: number;
 };
@@ -51,108 +45,129 @@ export const areaFillLayer = {
   },
 };
 
-export const defaultConfig: PaintConfig = [
+export const defaultConfig: LayerConfig[] = [
   {
     type: "fill",
-    default: {
-      "fill-color": ["get", "color"],
-      "fill-opacity": 0.08,
-    },
-    selected: {
-      "fill-opacity": 0.13,
-    },
-    hovered: {
-      "fill-opacity": 0.15,
-    },
-    active: {
-      "fill-opacity": 0.2,
+    paint: {
+      default: {
+        "fill-color": ["get", "color"],
+        "fill-opacity": 0.08,
+      },
+      selected: {
+        "fill-opacity": 0.13,
+      },
+      hovered: {
+        "fill-opacity": 0.15,
+      },
+      active: {
+        "fill-opacity": 0.2,
+      },
     },
   },
   {
     type: "line",
-    default: {
-      "line-width": 1.5,
-      "line-color": ["get", "color"],
-      "line-opacity": 1,
+    paint: {
+      default: {
+        "line-width": 1.5,
+        "line-color": ["get", "color"],
+        "line-opacity": 1,
+      },
+      selected: {
+        "line-width": 1.5,
+        "line-opacity": 1,
+      },
+      hovered: {
+        "line-width": 2,
+        "line-opacity": 1,
+      },
+      active: {
+        "line-width": 2,
+        "line-opacity": 1,
+      },
     },
-    selected: {
-      "line-width": 1.5,
-      "line-opacity": 1,
-    },
-    hovered: {
-      "line-width": 2,
-      "line-opacity": 1,
-    },
-    active: {
-      "line-width": 2,
-      "line-opacity": 1,
+    layout: {
+      "line-cap": "round",
+      "line-join": "round",
     },
   },
   {
     type: "circle",
-    default: {
-      "circle-radius": 2,
-      "circle-stroke-width": 0.5,
-      "circle-color": ["get", "color"],
-      "circle-stroke-color": ["get", "color"],
-    },
-    hovered: {
-      "circle-radius": 2,
-      "circle-stroke-width": 1.5,
-      "circle-stroke-color": ["get", "color"],
-      "circle-color": "#FFFFFF",
-    },
-    selected: {
-      "circle-stroke-color": ["get", "color"],
-      "circle-color": "#FFFFFF",
-      "circle-radius": 2.3,
-      "circle-stroke-width": 1.5,
-    },
-    selectedHovered: {
-      "circle-radius": 3,
-    },
-    active: {
-      "circle-stroke-color": "#FFFFFF",
-      "circle-color": ["get", "color"],
+    paint: {
+      default: {
+        "circle-radius": 2,
+        "circle-stroke-width": 0.5,
+        "circle-color": ["get", "color"],
+        "circle-stroke-color": ["get", "color"],
+      },
+      hovered: {
+        "circle-radius": 2,
+        "circle-stroke-width": 1.5,
+        "circle-stroke-color": ["get", "color"],
+        "circle-color": "#FFFFFF",
+      },
+      selected: {
+        "circle-stroke-color": ["get", "color"],
+        "circle-color": "#FFFFFF",
+        "circle-radius": 2.3,
+        "circle-stroke-width": 1.5,
+      },
+      selectedHovered: {
+        "circle-radius": 3,
+      },
+      active: {
+        "circle-stroke-color": "#FFFFFF",
+        "circle-color": ["get", "color"],
+      },
     },
   },
 ];
 
-export const generateLayers = (config: PaintConfig): Omit<Layer, "id">[] => {
+export const generateLayers = (config: LayerConfig[]): Omit<Layer, "id">[] => {
   return config.map((item) => {
-    const paintKeys = Object.keys(item.default);
+    const paintKeys = Object.keys(item.paint.default);
 
     return {
       type: item.type as any,
-      paint: (paintKeys as Array<keyof AnyPaint>).reduce((acc, key) => {
-        return {
-          ...acc,
-          [key]: [
-            "case",
-            ["all", ["boolean", ["feature-state", "hovered"], false], ["boolean", ["feature-state", "active"], false]],
-            item.activeHovered?.[key] ||
-              item.active?.[key] ||
-              item.selectedHovered?.[key] ||
-              item.hovered?.[key] ||
-              item.selected?.[key] ||
-              item.default[key],
-            ["boolean", ["feature-state", "active"], false],
-            item.active?.[key] || item.selected?.[key] || item.default[key],
-            [
-              "all",
+      paint: (paintKeys as (keyof AnyPaint)[]).reduce(
+        (acc: AnyPaint | AnyLayout, key: keyof (AnyPaint | AnyLayout)): AnyPaint | AnyLayout => {
+          return {
+            ...acc,
+            [key]: [
+              "case",
+              [
+                "all",
+                ["boolean", ["feature-state", "hovered"], false],
+                ["boolean", ["feature-state", "active"], false],
+              ],
+              item.paint.activeHovered?.[key] ||
+                item.paint.active?.[key] ||
+                item.paint.selectedHovered?.[key] ||
+                item.paint.hovered?.[key] ||
+                item.paint.selected?.[key] ||
+                item.paint.default[key],
+              ["boolean", ["feature-state", "active"], false],
+              item.paint.active?.[key] || item.paint.selected?.[key] || item.paint.default[key],
+              [
+                "all",
+                ["boolean", ["feature-state", "hovered"], false],
+                ["boolean", ["feature-state", "selected"], false],
+              ],
+              item.paint.selectedHovered?.[key] ||
+                item.paint.hovered?.[key] ||
+                item.paint.selected?.[key] ||
+                item.paint.default[key],
               ["boolean", ["feature-state", "hovered"], false],
+              item.paint.hovered?.[key] || item.paint.default[key],
               ["boolean", ["feature-state", "selected"], false],
+              item.paint.selected?.[key] || item.paint.default[key],
+              item.paint.default[key],
             ],
-            item.selectedHovered?.[key] || item.hovered?.[key] || item.selected?.[key] || item.default[key],
-            ["boolean", ["feature-state", "hovered"], false],
-            item.hovered?.[key] || item.default[key],
-            ["boolean", ["feature-state", "selected"], false],
-            item.selected?.[key] || item.default[key],
-            item.default[key],
-          ],
-        };
-      }, {} as AnyPaint),
-    };
+          };
+        },
+        {} as AnyPaint,
+      ),
+      ...(item.layout ? { layout: item.layout } : {}),
+    } as Omit<Layer, "id">;
   });
 };
 

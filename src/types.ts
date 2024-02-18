@@ -25,13 +25,8 @@ export type MultiPolygon = {
   coordinates: Position[][][];
 };
 
-export type DrawType = "LineString" | "Polygon" | "MultiLineString";
+export type DrawType = "LineString" | "Polygon";
 export type LayerType = "point" | "line" | "plane";
-export type Node = {
-  fid: number;
-  indices: number[];
-  position: Position;
-};
 
 export type Feature<T = LineString | Polygon | MultiLineString | MultiPolygon> = T & {
   id: number;
@@ -40,12 +35,19 @@ export type Feature<T = LineString | Polygon | MultiLineString | MultiPolygon> =
   } & Record<string, any>;
 };
 
+export type Node = {
+  fid: number;
+  indices: number[];
+  position: Position;
+  props?: Feature["props"];
+};
+
 export type SourceEvent = {
   position: Position;
   features: Feature[];
   nodes: Node[];
+  originalEvent: MouseEvent | TouchEvent;
   layer?: LayerType;
-  originalEvent?: MouseEvent | TouchEvent;
 };
 
 export type SourceEventOptions = { once?: boolean } | undefined;

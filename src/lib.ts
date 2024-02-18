@@ -1,85 +1,146 @@
-import { Feature, Polygon, Position, Node } from "./types";
-type MultiPosition = Position | MultiPosition[];
+import { Feature, Polygon, Position, Node, LineString, MultiLineString, MultiPolygon } from "./types";
 
-const getPoints = (feature: Feature | undefined): MultiPosition[] => {
+const getShape = (feature: Feature | undefined, indices: number[]): Position[] => {
   if (!feature) return [];
-
   switch (feature.type) {
-    case "MultiPolygon":
-      return feature.coordinates.map((g) => g.map((c) => c.slice(0, c.length - 1)));
+    case "LineString":
+      return Array.from(feature.coordinates);
+    case "MultiLineString":
     case "Polygon":
-      return feature.coordinates.map((c) => c.slice(0, c.length - 1));
+      if (indices.length < 1) return [];
+      return Array.from(feature.coordinates[indices[0]] ?? []);
+    case "MultiPolygon":
+      if (indices.length < 2) return [];
+      return Array.from(feature.coordinates[indices[0]]?.[indices[1]] ?? []);
     default:
-      return feature.coordinates;
+      return [];
   }
 };
 
-const getGeometry = (indices: number[], points: MultiPosition[]) => {
-  let _indices = Array.from(indices);
-  let _points: MultiPosition[] = Array.from(points);
-  while (_indices.length > 0 && Array.isArray(_points[0])) {
-    _points = _points[_indices[0]] as MultiPosition[];
-    _indices = [..._indices.slice(1)];
+const traverseShapes = (feature: Feature | undefined, callback: (positions: Position[], indices: number[]) => void) => {
+  if (!feature) return [];
+  switch (feature.type) {
+    case "LineString":
+      return callback(feature.coordinates, []);
+    case "Polygon":
+    case "MultiLineString":
+      return feature.coordinates.forEach((positions, i) => callback(positions, [i]));
+    case "MultiPolygon":
+      return feature.coordinates.forEach((shapes, i) => shapes.forEach((positions, j) => callback(positions, [i, j])));
+    default:
+      return;
   }
-  return _points as Position[];
 };
 
-const updateFeature = (
-  feature: Feature,
+const updateShape = (
+  feature: Omit<Feature, "coordinates"> & { coordinates?: Feature["coordinates"] },
   indices: number[],
-  updater: (positions: Position[]) => Position[],
+  positions: Position[],
 ): Feature => {
-  const mapper = (data: Position[] | MultiPosition[], _indices: number[]): MultiPosition[] => {
-    if (_indices.length === 0) return positions.toCoords(updater(data as Position[]), feature.type);
-    return [
-      ...data.slice(0, _indices[0]),
-      mapper(data[_indices[0]] as MultiPosition[], _indices.slice(1)),
-      ...data.slice(_indices[0] + 1),
-    ];
-  };
+  if (!feature) return feature;
+  switch (feature.type) {
+    case "LineString":
+      return { ...feature, coordinates: positions } as Feature<LineString>;
+    case "MultiLineString":
+    case "Polygon":
+      if (indices.length < 1)
+        return { ...feature, coordinates: feature?.coordinates || [] } as Feature<MultiLineString> | Feature<Polygon>;
+      return {
+        ...feature,
+        coordinates: [
+          ...(feature.coordinates || []).slice(0, indices[0]),
+          positions,
+          ...(feature.coordinates || []).slice(indices[0] + 1),
+        ],
+      } as Feature<MultiLineString> | Feature<Polygon>;
+    case "MultiPolygon":
+      if (indices.length < 2) return { ...feature, coordinates: feature?.coordinates || [] } as Feature<MultiPolygon>;
+      return {
+        ...feature,
+        coordinates: [
+          ...(feature.coordinates ?? []).slice(0, indices[0]),
+          [
+            ...(feature.coordinates?.[indices[0]] ?? []).slice(0, indices[1]),
+            positions,
+            ...(feature.coordinates?.[indices[0]] ?? []).slice(indices[1] + 1),
+          ],
+          ...(feature.coordinates ?? []).slice(indices[0] + 1),
+        ],
+      } as Feature<MultiPolygon>;
 
-  return {
-    ...feature,
-    coordinates: mapper(getPoints(feature), indices),
-  } as Feature;
+    default:
+      return { ...feature, coordinates: feature?.coordinates || [] } as Feature;
+  }
+};
+
+const createPlaceholderNodes = (features: Feature[]): Node[] => {
+  return features.reduce((acc, feature) => {
+    traverseShapes(feature, (positions, indices) => {
+      const startIndex = openShape(positions, feature.type).length;
+      positions.slice(1).forEach((position, index) => {
+        acc.push({
+          fid: feature.id,
+          position: math.average(position, positions[index]),
+          indices: [...indices, startIndex + index],
+          props: feature.props,
+        });
+      });
+    });
+
+    return acc;
+  }, [] as Node[]);
 };
 
 const createNodes = (features: Feature[]): Node[] => {
-  const reducer =
-    (feature: Feature, indices: number[]) =>
-    (acc: Node[], item: Position | MultiPosition[], index: number): Node[] => [
-      ...acc,
-      ...(Array.isArray(item[0])
-        ? (item as MultiPosition[]).reduce(reducer(feature, [index]), acc)
-        : [
-            {
-              fid: feature.id,
-              position: item as Position,
-              indices: [...indices, index],
-            },
-          ]),
-    ];
+  return features.reduce((acc, feature) => {
+    traverseShapes(feature, (positions, indices) => {
+      openShape(positions, feature.type).forEach((position, index) => {
+        acc.push({
+          fid: feature.id,
+          position,
+          indices: [...indices, index],
+          props: feature.props,
+        });
+      });
+    });
 
-  return features.reduce(
-    (acc, feature) => [...acc, ...getPoints(feature).reduce(reducer(feature, []), acc)],
-    [] as Node[],
-  );
+    return acc;
+  }, [] as Node[]);
 };
 
 const moveFeatures = (features: Feature[], ids: number[], delta: Position) => {
-  return features.map((item) => {
-    if (!ids.includes(item.id)) return item;
+  return features.map((feature) => {
+    if (!ids.includes(feature.id)) return feature;
 
-    const mapper = (data: MultiPosition, delta: Position): MultiPosition[] | MultiPosition => {
-      if (!Array.isArray(data[0])) return positions.add(data as Position, delta);
-      return data.map((item) => mapper(item as MultiPosition, delta));
+    const mapper = (data: Feature["coordinates"] | Position, delta: Position): Feature["coordinates"] | Position => {
+      if (!Array.isArray(data[0])) return math.add(data as Position, delta);
+      return (data as Feature["coordinates"]).map((item) => mapper(item, delta)) as Feature["coordinates"];
     };
 
-    return { ...item, coordinates: mapper(item.coordinates, delta) } as Feature;
+    return { ...feature, coordinates: mapper(feature.coordinates, delta) } as Feature;
   });
 };
 
-const positions = {
+const closeShape = (positions: Position[], type?: Feature["type"]) => {
+  switch (type) {
+    case "Polygon":
+    case "MultiPolygon":
+      return [...positions, positions[0]];
+    default:
+      return positions;
+  }
+};
+const openShape = (positions: Position[], type?: Feature["type"]) => {
+  switch (type) {
+    case "Polygon":
+    case "MultiPolygon":
+      return positions.slice(0, positions.length - 1);
+    default:
+      return positions;
+  }
+};
+
+const math = {
   subtract: (start: Position, end: Position) => {
     if (!start || !end) return start || end;
     return [end[0] - start[0], end[1] - start[1]] as Position;
@@ -100,23 +161,6 @@ const positions = {
     if (!start || !end) return -1;
     return Math.sqrt(Math.pow(end[0] - start[0], 2) + Math.pow(end[1] - start[1], 2));
   },
-  toCoordinates: <T extends Feature>(positions: Position[], type: T["type"]): T["coordinates"] => {
-    switch (type) {
-      case "Polygon":
-        return [[...positions, positions[0]]];
-      default:
-        return positions;
-    }
-  },
-  toCoords: (points: Position[], type: Feature["type"]) => {
-    switch (type) {
-      case "Polygon":
-      case "MultiPolygon":
-        return [...points, points[0]];
-      default:
-        return points;
-    }
-  },
 };
 
 const isArrayEqual = (a: number[], b: number[]) => {
@@ -131,4 +175,16 @@ const compareNodes = <T extends Omit<Node, "position">>(prev: T[], next: T[]): [
   ];
 };
 
-export { isArrayEqual, compareNodes, getPoints, createNodes, getGeometry, moveFeatures, updateFeature, positions };
+export {
+  isArrayEqual,
+  compareNodes,
+  createNodes,
+  createPlaceholderNodes,
+  getShape,
+  updateShape,
+  openShape,
+  closeShape,
+  traverseShapes,
+  moveFeatures,
+  math,
+};

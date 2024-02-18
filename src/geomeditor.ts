@@ -10,16 +10,17 @@ export class Geomeditor<T extends object> {
   private _tools: AnyTool[] = [];
   private _tool: AnyTool | undefined;
   private readonly _core: Core;
+  private readonly _source: Source<T>;
   private _onLoad: (() => void) | undefined;
-  private _onChange: ((data: T[]) => void) | undefined;
-  private _onSelect: ((indices: number[]) => void) | undefined;
+  private _onChange: (() => void) | undefined;
+  private _onSelect: (() => void) | undefined;
   private _isLoaded = false;
 
-  public onSelect(callback?: (indices: number[]) => void) {
+  public onSelect(callback?: () => void) {
     this._onSelect = callback;
   }
 
-  public onChange(callback?: (data: T[]) => void) {
+  public onChange(callback?: () => void) {
     this._onChange = callback;
   }
 
@@ -34,35 +35,35 @@ export class Geomeditor<T extends object> {
     this._onLoad?.();
   }
 
-  constructor(source: Source, tools?: (typeof AnyTool | "pen" | "edit")[]) {
+  constructor(source: Source<T>, tools?: (typeof AnyTool | "pen" | "edit")[]) {
     this._core = new Core({
       source,
-      onSelect: (indices: number[]) => this._onSelect?.(indices),
+      onSelect: () => this._onSelect?.(),
       getTools: () => this.tools,
     });
-
+    this._source = source;
     this._tools = (tools ?? ["pen", "edit"]).reduce((res, item) => {
       const Tool = typeof item === "string" ? (item in defaultTools ? defaultTools[item] : undefined) : item;
       if (!Tool) return res;
       return [...res, new Tool(this._core)];
     }, [] as AnyTool[]);
 
-    source.onChange((data: T[]) => this._onChange?.(data));
+    source.onChange(() => this._onChange?.());
     source.onInit(() => this._onInit());
   }
 
   set data(data: T[]) {
-    this._core.data = data;
-    this._core.selected = this._core.selected.length ? [Math.min(this._core.selected[0], data.length)] : [];
+    if (data.length < this._source.data.length) this._core.selected = [];
+    this._source.data = data;
     this._tool?.refresh();
   }
 
+  get data() {
+    return this._source.data as T[];
+  }
+
   get tool() {
-    if (!this._tool) return undefined;
-    return {
-      name: this._tool.name,
-      config: this._tool.config,
-    };
+    return this._tool?.name;
   }
 
   get tools() {
@@ -77,6 +78,11 @@ export class Geomeditor<T extends object> {
           },
         },
       {
+        delete: () => {
+          if (this._tool?.delete()) return;
+          if (this.selected.length === 0) return;
+          this.data = this._source.data.filter((_, index) => !this.selected.includes(index));
+        },
         off: () => {
           this._tool?.disable();
           this._tool = undefined;
@@ -92,6 +98,7 @@ export class Geomeditor<T extends object> {
 
   public remove() {
     this._tool?.disable();
+    this._tool = undefined;
     this._core.remove();
   }
 }

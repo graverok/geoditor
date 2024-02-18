@@ -5,10 +5,10 @@ type RenderListenerParams =
   | [string, SourceMouseHandler, SourceEventOptions]
   | [string, SourceMouseHandler];
 
-export abstract class Source {
-  private _data: object[] = [];
+export abstract class Source<T = object> {
+  private _data: T[] = [];
   private _features: Feature[] = [];
-  private _onChange!: ((data: any[]) => void) | undefined;
+  private _onChange!: (() => void) | undefined;
   readonly layerNames: Record<LayerType, string>;
   abstract addListener(...params: RenderListenerParams): void;
   abstract removeListener(...params: RenderListenerParams): void;
@@ -16,11 +16,12 @@ export abstract class Source {
   abstract setFeatureState(id: number | undefined, state: Record<string, boolean>): void;
   abstract setNodeState(node: Pick<Node, "indices" | "fid">, state: Record<string, boolean>): void;
   abstract remove(): void;
-  abstract render(layer: LayerType, features: (Feature | Node)[]): void;
+  abstract renderFeatures(features: Feature[]): void;
+  abstract renderNodes(nodes: Node[]): void;
   abstract get renderer(): any;
   abstract onInit(callback?: () => void): void;
-  abstract toGeometry(): Feature[];
-  abstract toData(): any[];
+  abstract toFeatures(): Feature[];
+  abstract toData(): T[];
 
   protected constructor(layerNames: Record<LayerType, string>) {
     this.layerNames = layerNames;
@@ -28,14 +29,14 @@ export abstract class Source {
 
   set data(data) {
     this._data = Array.from(data);
-    this._features = this.toGeometry();
+    this._features = this.toFeatures();
   }
 
   get data() {
     return Array.from(this._data);
   }
 
-  public onChange(callback?: (data: any[]) => void) {
+  public onChange(callback?: () => void) {
     this._onChange = callback;
   }
 
@@ -45,7 +46,8 @@ export abstract class Source {
 
   set features(features: Feature[]) {
     this._features = features;
-    this._onChange?.(this.toData());
+    this._data = this.toData();
+    this._onChange?.();
   }
 
   public getFeature(id?: number) {

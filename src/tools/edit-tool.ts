@@ -1,6 +1,6 @@
 import { AnyTool, Core } from "../controllers";
 import * as lib from "../lib";
-import { Feature, Node, Position, SourceEvent } from "../types";
+import { Node, Position, SourceEvent } from "../types";
 
 export class EditTool extends AnyTool {
   private _isDragging = false;
@@ -17,43 +17,12 @@ export class EditTool extends AnyTool {
     this._handleLineDrag = this._handleLineDrag.bind(this);
     this._handlePointHover = this._handlePointHover.bind(this);
     this._handlePointDrag = this._handlePointDrag.bind(this);
-    this._createPlaceholders = this._createPlaceholders.bind(this);
-  }
-
-  private _createPlaceholders(feature: Feature) {
-    if (!this.core.selected.includes(feature.id)) return feature;
-    type MultiPosition = Position | MultiPosition[];
-
-    const mapper = (data: Position[] | MultiPosition[]): MultiPosition[] => {
-      if (!Array.isArray(data[0][0])) {
-        const placeholders = Array.from(data as Position[])
-          .slice(1)
-          .map((pos, index) => lib.positions.average(pos, (data as Position[])[index]));
-        if (feature.type === "Polygon" || feature.type === "MultiPolygon") {
-          placeholders.push(lib.positions.average((data as Position[])[0], (data as Position[])[data.length - 1]));
-          placeholders.push((data as Position[])[0]);
-        }
-
-        return [...data, ...placeholders] as Position[];
-      }
-
-      return (data as Feature["coordinates"][]).map(mapper);
-    };
-
-    return {
-      ...feature,
-      coordinates: mapper(lib.getPoints(feature)),
-    } as Feature;
   }
 
   private _renderPlaceholderNodes() {
-    this.core.render(this.core.features, { point: false });
-    this.core.render(this.core.features.map(this._createPlaceholders), {
-      plane: false,
-      line: false,
-      point: this.core.selected,
-    });
-    this.core.selectedNodes = lib.createNodes(this.core.getSelectedFeatures());
+    const nodes = lib.createNodes(this.core.getSelectedFeatures());
+    this.core.render("nodes", [...nodes, ...lib.createPlaceholderNodes(this.core.getSelectedFeatures())]);
+    this.core.selectedNodes = nodes;
   }
 
   private _setHovered(id?: number) {
@@ -84,14 +53,16 @@ export class EditTool extends AnyTool {
     const id = this._hovered;
     let delta: Position = [0, 0];
     this.core.setFeatureState(id, { active: true });
-    if (!this.core.selected.includes(id)) this.core.selectedNodes = [];
     this.core.selected = [id];
-    this.core.render(this.core.features, { point: this.core.selected });
+    this.core.selectedNodes = [];
+    this.core.render("nodes", lib.createNodes(this.core.getSelectedFeatures()));
 
     const _onMove = (ev: SourceEvent) => {
       isChanged = true;
-      delta = lib.positions.subtract(e.position, ev.position);
-      this.core.render(lib.moveFeatures(this.core.features, this.core.selected, delta), { point: this.core.selected });
+      delta = lib.math.subtract(e.position, ev.position);
+      const features = lib.moveFeatures(this.core.features, this.core.selected, delta);
+      this.core.render("features", features);
+      this.core.render("nodes", lib.createNodes(features.filter((item) => this.core.selected.includes(item.id))));
     };
 
     const _onFinish = () => {
@@ -132,18 +103,16 @@ export class EditTool extends AnyTool {
       !this._isDragging && this.core.setNodeState(node, { hovered: false });
       this.core.removeListener("mouseleave", "point", _onLeave);
       this.core.removeListener("mousemove", "point", _onMove);
+      document.removeEventListener("mouseup", _onMouseUp);
+    };
+
+    const _onMouseUp = () => {
+      this.core.setNodeState(node, { hovered: true });
     };
 
     this.core.addListener("mouseleave", "point", _onLeave);
     this.core.addListener("mousemove", "point", _onMove);
-    this._isDragging &&
-      document.addEventListener(
-        "mouseup",
-        () => {
-          this.core.setNodeState(node, { hovered: true });
-        },
-        { once: true },
-      );
+    this._isDragging && document.addEventListener("mouseup", _onMouseUp, { once: true });
   }
 
   private _handlePointDrag(e: SourceEvent) {
@@ -158,25 +127,29 @@ export class EditTool extends AnyTool {
     this._isDragging = true;
 
     const pidx = node.indices.length - 1;
-    let points = lib.getGeometry(node.indices.slice(0, pidx), lib.getPoints(feature));
+    let points = lib.openShape(lib.getShape(feature, node.indices), feature.type);
     let isChanged = false;
 
-    const _updater = (next?: Position) => (): Position[] => [
-      ...points.slice(0, node.indices[pidx]),
-      ...(next ? [next] : []),
-      ...points.slice(node.indices[pidx] + 1),
-    ];
+    const _updater = (next?: Position) =>
+      lib.closeShape(
+        [...points.slice(0, node.indices[pidx]), ...(next ? [next] : []), ...points.slice(node.indices[pidx] + 1)],
+        feature?.type,
+      );
 
     if (node.indices[pidx] >= points.length) {
       isChanged = true;
       this.core.setNodeState(node, { hovered: false });
       node.indices[pidx] = (node.indices[pidx] % points.length) + 1;
       points = [...points.slice(0, node.indices[pidx]), node.position, ...points.slice(node.indices[pidx])];
-      feature = lib.updateFeature(feature, node.indices.slice(0, pidx), () => points);
+      feature = lib.updateShape(feature, node.indices.slice(0, pidx), lib.closeShape(points, feature.type));
     }
 
     const _onSiblingEnter = (ev: SourceEvent) => {
-      siblingNode = ev.nodes.find((node) => [before, after].includes(node.indices[pidx]));
+      siblingNode = ev.nodes.find(
+        (n) =>
+          [before, after].includes(n.indices[pidx]) &&
+          lib.isArrayEqual(n.indices.slice(0, pidx), node.indices.slice(0, pidx)),
+      );
       siblingNode && this.core.setNodeState(siblingNode, { hovered: true, active: true });
     };
 
@@ -188,12 +161,14 @@ export class EditTool extends AnyTool {
     const _onMove = (ev: SourceEvent) => {
       if (!feature) return;
       isChanged = true;
-      nextPosition =
-        siblingNode?.position || lib.positions.add(node.position, lib.positions.subtract(e.position, ev.position));
-      feature = lib.updateFeature(feature, node.indices.slice(0, pidx), _updater(nextPosition));
-      this.core.render([...this.core.features.slice(0, node.fid - 1), feature, ...this.core.features.slice(node.fid)], {
-        point: this.core.selected,
-      });
+      nextPosition = siblingNode?.position || lib.math.add(node.position, lib.math.subtract(e.position, ev.position));
+      feature = lib.updateShape(feature, node.indices.slice(0, pidx), _updater(nextPosition));
+      this.core.render("features", [
+        ...this.core.features.slice(0, node.fid - 1),
+        feature,
+        ...this.core.features.slice(node.fid),
+      ]);
+      this.core.render("nodes", lib.createNodes([feature]));
     };
 
     const _onFinish = () => {
@@ -224,7 +199,7 @@ export class EditTool extends AnyTool {
 
         this.core.features = [
           ...this.core.features.slice(0, node.fid - 1),
-          lib.updateFeature(feature, node.indices.slice(0, pidx), _updater(siblingNode ? undefined : nextPosition)),
+          lib.updateShape(feature, node.indices.slice(0, pidx), _updater(siblingNode ? undefined : nextPosition)),
           ...this.core.features.slice(node.fid),
         ];
 
@@ -239,9 +214,7 @@ export class EditTool extends AnyTool {
       node.indices[pidx] === 0 ? (feature.type === "Polygon" ? points.length - 1 : -1) : node.indices[pidx] - 1;
     const after =
       node.indices[pidx] === points.length - 1 ? (feature.type === "Polygon" ? 0 : -1) : node.indices[pidx] + 1;
-    this.core.render([...this.core.features.slice(0, node.fid - 1), feature, ...this.core.features.slice(node.fid)], {
-      point: this.core.selected,
-    });
+    this.core.render("nodes", lib.createNodes([feature]));
     this.core.selectedNodes = [node];
     this.core.setNodeState(node, { active: true, hovered: true });
     this.core.addListener("mousemove", _onMove);
@@ -250,8 +223,12 @@ export class EditTool extends AnyTool {
     if (points.length <= 2 + Number(feature.type === "Polygon")) return;
     this.core.selectedNodes = [
       ...this.core.selectedNodes,
-      ...(before >= 0 ? [{ fid: node.fid, indices: [...node.indices.slice(0, pidx), before] }] : []),
-      ...(after >= 0 ? [{ fid: node.fid, indices: [...node.indices.slice(0, pidx), after] }] : []),
+      ...(before >= 0
+        ? [{ fid: node.fid, props: feature.props, indices: [...node.indices.slice(0, pidx), before] }]
+        : []),
+      ...(after >= 0
+        ? [{ fid: node.fid, props: feature.props, indices: [...node.indices.slice(0, pidx), after] }]
+        : []),
     ];
     this.core.addListener("mousemove", "point", _onSiblingEnter);
     this.core.addListener("mouseleave", "point", _onSiblingLeave);
@@ -263,6 +240,7 @@ export class EditTool extends AnyTool {
 
   public refresh() {
     this.core.selectedNodes = [];
+    this.core.render("features", this.core.features);
     this._renderPlaceholderNodes();
   }
 
