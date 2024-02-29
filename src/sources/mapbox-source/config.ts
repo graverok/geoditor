@@ -54,10 +54,10 @@ export const defaultConfig: LayerConfig[] = [
         "fill-opacity": 0.08,
       },
       selected: {
-        "fill-opacity": 0.13,
+        "fill-opacity": 0.15,
       },
       hovered: {
-        "fill-opacity": 0.15,
+        "fill-opacity": 0.18,
       },
       active: {
         "fill-opacity": 0.2,
@@ -70,18 +70,18 @@ export const defaultConfig: LayerConfig[] = [
       default: {
         "line-width": 1.5,
         "line-color": ["get", "color"],
-        "line-opacity": 1,
+        "line-opacity": 0.7,
       },
       selected: {
-        "line-width": 1.5,
+        "line-width": 2,
         "line-opacity": 1,
       },
       hovered: {
-        "line-width": 2,
+        "line-width": 2.2,
         "line-opacity": 1,
       },
       active: {
-        "line-width": 2,
+        "line-width": 2.2,
         "line-opacity": 1,
       },
     },

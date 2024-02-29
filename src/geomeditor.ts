@@ -48,7 +48,10 @@ export class Geomeditor<T extends object> {
       return [...res, new Tool(this._core)];
     }, [] as AnyTool[]);
 
-    source.onChange(() => this._onChange?.());
+    source.onChange(() => {
+      this._onChange?.();
+      this._tool?.refresh();
+    });
     source.onInit(() => this._onInit());
   }
 

@@ -10,6 +10,7 @@ export class PenTool extends AnyTool {
   private _types: DrawType[] = [];
   private _resetCursor!: (() => void) | undefined;
   private _props: Record<string, any> | undefined;
+  private _storedSelected: number[] | undefined;
 
   constructor(core: Core) {
     super(core);
@@ -203,6 +204,7 @@ export class PenTool extends AnyTool {
     this.core.selectedNodes = [];
     const id = this.core.features.length + 1;
     this.core.selected = [id];
+    this._storedSelected = undefined;
     this._geometry = [e.position];
     this._indices = this._types.includes("LineString") ? [] : [0];
     this._render();
@@ -250,11 +252,11 @@ export class PenTool extends AnyTool {
         feature,
         ...this.core.features.slice(this.core.selected[0]),
       ];
-      this.refresh();
     } else {
       this.core.setNodeState(node, { hovered: false });
       this.core.selectedNodes = [];
       this.core.selected = [node.fid];
+      this._storedSelected = undefined;
       this._geometry = [];
       this._indices = node.indices.slice(0, node.indices.length - 1);
       this._isReversed = node.indices[node.indices.length - 1] === 0;
@@ -285,6 +287,10 @@ export class PenTool extends AnyTool {
   }
 
   public refresh() {
+    if (this.core.selected.length > 1) {
+      this._storedSelected = this.core.selected;
+      this.core.selected = [];
+    }
     this._resetDraw();
     this._activateStartingNodes(this.core.getSelectedFeatures());
   }
@@ -307,9 +313,7 @@ export class PenTool extends AnyTool {
       ["LineString", "Polygon"],
     );
     this._resetCursor = this.core.setCursor("default");
-    this.core.render("features", this.core.features);
-    this.core.render("nodes", lib.createNodes(this.core.getSelectedFeatures()));
-    this._activateStartingNodes(this.core.getSelectedFeatures());
+    this.refresh();
 
     this.core.addListener("mouseenter", "point", this._handlePointMouseEnter);
     this.core.addListener("mousedown", "point", this._handlePointMouseDown);
@@ -327,6 +331,10 @@ export class PenTool extends AnyTool {
     this.core.removeListener("mouseenter", "point", this._handlePointMouseEnter);
     this.core.removeListener("click", "point", this._handlePointClick);
     this._resetCursor?.();
+    if (this._storedSelected) {
+      this.core.selected = this._storedSelected;
+      this._storedSelected = undefined;
+    }
 
     if (!this._geometry?.length) return this._resetDraw();
     let _geometry = this._getShapeGeometry(this._geometry, false);

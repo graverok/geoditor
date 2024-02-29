@@ -21,8 +21,13 @@ export class EditTool extends AnyTool {
 
   private _renderPlaceholderNodes() {
     const nodes = lib.createNodes(this.core.getSelectedFeatures());
-    this.core.render("nodes", [...nodes, ...lib.createPlaceholderNodes(this.core.getSelectedFeatures())]);
-    this.core.selectedNodes = nodes;
+    if (this.core.selected.length === 1) {
+      this.core.render("nodes", [...nodes, ...lib.createPlaceholderNodes(this.core.getSelectedFeatures())]);
+      this.core.selectedNodes = nodes;
+    } else {
+      this.core.render("nodes", nodes);
+      this.core.selectedNodes = [];
+    }
   }
 
   private _setHovered(id?: number) {
@@ -53,7 +58,12 @@ export class EditTool extends AnyTool {
     const id = this._hovered;
     let nextPosition: Position = Array.from(e.position);
     this.core.setFeatureState(id, { active: true });
-    this.core.selected = [id];
+    const isSelected = this.core.selected.includes(id);
+    const isShiftPressed = e.originalEvent.shiftKey;
+    if (!isSelected) {
+      this.core.selected = [...(isShiftPressed ? this.core.selected : []), id];
+    }
+
     this.core.selectedNodes = [];
     this.core.render("nodes", lib.createNodes(this.core.getSelectedFeatures()));
 
@@ -69,8 +79,12 @@ export class EditTool extends AnyTool {
       this.core.removeListener("mousemove", _onMove);
       this.core.setFeatureState(id, { active: false });
       this._isDragging = false;
-      if (isChanged)
+      if (isChanged) {
         this.core.features = lib.moveFeatures(this.core.features, this.core.selected, e.position, nextPosition);
+      } else if (isSelected) {
+        this.core.selected =
+          !isShiftPressed || this.core.selected.length <= 1 ? [id] : this.core.selected.filter((item) => item !== id);
+      }
       this._renderPlaceholderNodes();
     };
 
@@ -79,16 +93,18 @@ export class EditTool extends AnyTool {
   }
 
   private _handleFillDrag(e: SourceEvent) {
-    if (this.core.hovered?.point || this.core.hovered?.line) return;
+    if (this.core.hovered?.point && this.core.selected.length === 1) return;
+    if (this.core.hovered?.line) return;
     this._handleFeaturesDrag(e);
   }
 
   private _handleLineDrag(e: SourceEvent) {
-    if (this.core.hovered?.point) return;
+    if (this.core.hovered?.point && this.core.selected.length === 1) return;
     this._handleFeaturesDrag(e);
   }
 
   private _handlePointHover(e: SourceEvent) {
+    if (this.core.selected.length !== 1) return;
     let node = e.nodes[0];
     !this._isDragging && this.core.setNodeState(node, { hovered: true });
 
@@ -117,6 +133,7 @@ export class EditTool extends AnyTool {
   }
 
   private _handlePointDrag(e: SourceEvent) {
+    if (this.core.selected.length !== 1) return;
     let node = e.nodes[0];
     let feature = this.core.getFeature(node?.fid);
     if (!node || !feature) return;
