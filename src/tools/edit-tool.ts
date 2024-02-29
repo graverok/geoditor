@@ -51,7 +51,7 @@ export class EditTool extends AnyTool {
     if (!this._hovered) return;
 
     const id = this._hovered;
-    let delta: Position = [0, 0];
+    let nextPosition: Position = Array.from(e.position);
     this.core.setFeatureState(id, { active: true });
     this.core.selected = [id];
     this.core.selectedNodes = [];
@@ -59,8 +59,8 @@ export class EditTool extends AnyTool {
 
     const _onMove = (ev: SourceEvent) => {
       isChanged = true;
-      delta = lib.math.subtract(e.position, ev.position);
-      const features = lib.moveFeatures(this.core.features, this.core.selected, delta);
+      nextPosition = ev.position;
+      const features = lib.moveFeatures(this.core.features, this.core.selected, e.position, nextPosition);
       this.core.render("features", features);
       this.core.render("nodes", lib.createNodes(features.filter((item) => this.core.selected.includes(item.id))));
     };
@@ -69,7 +69,8 @@ export class EditTool extends AnyTool {
       this.core.removeListener("mousemove", _onMove);
       this.core.setFeatureState(id, { active: false });
       this._isDragging = false;
-      if (isChanged) this.core.features = lib.moveFeatures(this.core.features, this.core.selected, delta);
+      if (isChanged)
+        this.core.features = lib.moveFeatures(this.core.features, this.core.selected, e.position, nextPosition);
       this._renderPlaceholderNodes();
     };
 
@@ -161,7 +162,9 @@ export class EditTool extends AnyTool {
     const _onMove = (ev: SourceEvent) => {
       if (!feature) return;
       isChanged = true;
-      nextPosition = siblingNode?.position || lib.math.add(node.position, lib.math.subtract(e.position, ev.position));
+      nextPosition = lib.math.normalize(
+        siblingNode?.position || lib.math.add(node.position, lib.math.subtract(e.position, ev.position)),
+      );
       feature = lib.updateShape(feature, node.indices.slice(0, pidx), _updater(nextPosition));
       this.core.render("features", [
         ...this.core.features.slice(0, node.fid - 1),

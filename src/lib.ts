@@ -80,7 +80,7 @@ const createPlaceholderNodes = (features: Feature[]): Node[] => {
       positions.slice(1).forEach((position, index) => {
         acc.push({
           fid: feature.id,
-          position: math.average(position, positions[index]),
+          position: math.normalize(math.average(position, positions[index])),
           indices: [...indices, startIndex + index],
           props: feature.props,
         });
@@ -108,16 +108,29 @@ const createNodes = (features: Feature[]): Node[] => {
   }, [] as Node[]);
 };
 
-const moveFeatures = (features: Feature[], ids: number[], delta: Position) => {
+const moveFeatures = (features: Feature[], ids: number[], start: Position, end: Position) => {
   return features.map((feature) => {
     if (!ids.includes(feature.id)) return feature;
 
-    const mapper = (data: Feature["coordinates"] | Position, delta: Position): Feature["coordinates"] | Position => {
-      if (!Array.isArray(data[0])) return math.add(data as Position, delta);
-      return (data as Feature["coordinates"]).map((item) => mapper(item, delta)) as Feature["coordinates"];
+    const mapper = (
+      data: Feature["coordinates"] | Position,
+      start: Position,
+      end: Position,
+    ): Feature["coordinates"] | Position => {
+      if (!Array.isArray(data[0])) {
+        const [lng, lat] = data as number[];
+
+        return math.normalize([
+          end[0] -
+            ((start[0] - lng) * Math.cos((lat / 180) * Math.PI)) /
+              Math.cos(((lat + end[1] - start[1]) / 180) * Math.PI),
+          lat + end[1] - start[1],
+        ]);
+      }
+      return (data as Feature["coordinates"]).map((item) => mapper(item, start, end)) as Feature["coordinates"];
     };
 
-    return { ...feature, coordinates: mapper(feature.coordinates, delta) } as Feature;
+    return { ...feature, coordinates: mapper(feature.coordinates, start, end) } as Feature;
   });
 };
 
@@ -160,6 +173,12 @@ const math = {
   distance: (start: Position, end: Position): number => {
     if (!start || !end) return -1;
     return Math.sqrt(Math.pow(end[0] - start[0], 2) + Math.pow(end[1] - start[1], 2));
+  },
+  normalize: (position: Position): Position => {
+    let [lng, lat] = position;
+    if (lat > 90) lat = 180 - lat;
+    if (lat < -90) lat = -180 - lat;
+    return [lng, lat];
   },
 };
 
