@@ -22,6 +22,7 @@ export class PenTool extends AnyTool {
     this._handlePointMouseDown = this._handlePointMouseDown.bind(this);
     this._activateFinishNodes = this._activateFinishNodes.bind(this);
     this._handleCanvasLeave = this._handleCanvasLeave.bind(this);
+    this._handleModifyKey = this._handleModifyKey.bind(this);
   }
 
   private _activateFinishNodes() {
@@ -143,6 +144,10 @@ export class PenTool extends AnyTool {
     !next && this.core.render("nodes", lib.createNodes([_feature]));
   }
 
+  private _handleModifyKey(e: KeyboardEvent) {
+    console.log(e.shiftKey);
+  }
+
   private _handleCanvasMouseMove(e: SourceEvent) {
     if (!this.core.hovered?.point) this._ignoreMapEvents = false;
     this.core.setCursor(this.core.hovered?.point && this._ignoreMapEvents ? "pointer" : "crosshair");
@@ -201,14 +206,14 @@ export class PenTool extends AnyTool {
       return;
     }
 
-    this.core.selectedNodes = [];
     const id = this.core.features.length + 1;
-    this.core.selected = [id];
-    this._storedSelected = undefined;
     this._geometry = [e.position];
     this._indices = this._types.includes("LineString") ? [] : [0];
+    this.core.selectedNodes = [];
+    this.core.selected = [id];
+    this._storedSelected = undefined;
     this._render();
-    this.core.setFeatureState(this.core.selected[0], { hovered: true });
+    this.core.setFeatureState(id, { hovered: true });
   }
 
   private _handlePointMouseEnter(e: SourceEvent) {
@@ -287,12 +292,16 @@ export class PenTool extends AnyTool {
   }
 
   public refresh() {
-    if (this.core.selected.length > 1) {
-      this._storedSelected = this.core.selected;
-      this.core.selected = [];
+    this.core.selectedNodes = [];
+    this.core.render("features", this.core.features);
+    this.core.render("nodes", lib.createNodes(this.core.getSelectedFeatures()));
+
+    if (!this.core.selected.length && this._geometry) {
+      this.core.selected = [this.core.features.length + 1];
+    } else {
+      this._activateStartingNodes(this.core.getSelectedFeatures());
     }
-    this._resetDraw();
-    this._activateStartingNodes(this.core.getSelectedFeatures());
+    this._render();
   }
 
   public enable(props?: Record<string, any>): void;
@@ -313,7 +322,13 @@ export class PenTool extends AnyTool {
       ["LineString", "Polygon"],
     );
     this._resetCursor = this.core.setCursor("default");
-    this.refresh();
+
+    if (this.core.selected.length > 1) {
+      this._storedSelected = this.core.selected;
+      this.core.selected = [];
+    }
+    this._resetDraw();
+    this._activateStartingNodes(this.core.getSelectedFeatures());
 
     this.core.addListener("mouseenter", "point", this._handlePointMouseEnter);
     this.core.addListener("mousedown", "point", this._handlePointMouseDown);
@@ -321,9 +336,13 @@ export class PenTool extends AnyTool {
     this.core.addListener("mousemove", this._handleCanvasMouseMove);
     this.core.addListener("click", this._handleCanvasClick);
     this.core.addListener("mouseout", this._handleCanvasLeave);
+    document.addEventListener("keydown", this._handleModifyKey);
+    document.addEventListener("keyup", this._handleModifyKey);
   }
 
   public disable() {
+    document.removeEventListener("keydown", this._handleModifyKey);
+    document.removeEventListener("keyup", this._handleModifyKey);
     this.core.removeListener("mouseout", this._handleCanvasLeave);
     this.core.removeListener("mousemove", this._handleCanvasMouseMove);
     this.core.removeListener("mousedown", "point", this._handlePointMouseDown);
@@ -336,12 +355,11 @@ export class PenTool extends AnyTool {
       this._storedSelected = undefined;
     }
 
-    if (!this._geometry?.length) return this._resetDraw();
+    if (!this._geometry?.length) return;
     let _geometry = this._getShapeGeometry(this._geometry, false);
     if (Number(this._types.includes("LineString")) + _geometry.length < 3) return this._resetDraw();
 
     const feature = this._getRenderFeature(this._getFeature(), _geometry);
-    this._resetDraw();
 
     this.core.features = [
       ...this.core.features.slice(0, this.core.selected[0] - 1),

@@ -6,6 +6,7 @@ export class EditTool extends AnyTool {
   private _isDragging = false;
   private _hovered: number | undefined;
   private _resetCursor!: (() => void) | undefined;
+  private _tid: number | undefined;
 
   constructor(core: Core) {
     super(core);
@@ -32,9 +33,13 @@ export class EditTool extends AnyTool {
 
   private _setHovered(id?: number) {
     if (id === this._hovered) return;
-    this._hovered && this.core.setFeatureState(this._hovered, { hovered: false });
-    id && this.core.setFeatureState(id, { hovered: true });
+    const prevId = this._hovered;
     this._hovered = id;
+    this._tid && clearTimeout(this._tid);
+    this._tid = +setTimeout(() => {
+      prevId && this.core.setFeatureState(prevId, { hovered: false });
+      id && this.core.setFeatureState(id, { hovered: true });
+    }, 50);
   }
 
   private _handleFeatureHover() {

@@ -73,7 +73,7 @@ export const defaultConfig: LayerConfig[] = [
         "line-opacity": 0.7,
       },
       selected: {
-        "line-width": 2,
+        "line-width": 1.9,
         "line-opacity": 1,
       },
       hovered: {
