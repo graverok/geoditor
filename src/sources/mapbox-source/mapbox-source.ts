@@ -22,7 +22,6 @@ import {
   Options,
   splitLayers,
 } from "./config";
-import mapboxgl from "mapbox-gl";
 
 type Subscription = {
   off: () => void;
@@ -58,8 +57,7 @@ export class MapboxSource extends Source<geojson.Feature> {
     this.addListener = this.addListener.bind(this);
     this.removeListener = this.removeListener.bind(this);
     this.setCursor = this.setCursor.bind(this);
-    this.setFeatureState = this.setFeatureState.bind(this);
-    this.setPointState = this.setPointState.bind(this);
+    this.setState = this.setState.bind(this);
     this._options = options;
 
     const init = () => {
@@ -244,16 +242,14 @@ export class MapboxSource extends Source<geojson.Feature> {
     };
   }
 
-  public setFeatureState(id: number | undefined, state: Record<string, boolean>) {
+  public setState(state: Record<string, boolean>, layer: LayerType, id?: number, indices?: number[]) {
     if (!id) return;
-    this._map?.setFeatureState({ id, source: this.layerNames.lines }, state);
-    this._map?.setFeatureState({ id, source: this.layerNames.planes }, state);
-  }
-
-  public setPointState({ indices, fid }: Point, state: Record<string, boolean>) {
-    if (!fid || !indices.length) return;
-    const globalId = this._points[`${fid}.${indices.join(".")}`];
-    globalId && this._map?.setFeatureState({ id: globalId, source: this.layerNames.points }, state);
+    if (indices) {
+      const globalId = this._points[`${id}.${indices.join(".")}`];
+      globalId && this._map?.setFeatureState({ id: globalId, source: this.layerNames[layer] }, state);
+    } else {
+      this._map?.setFeatureState({ id, source: this.layerNames[layer] }, state);
+    }
   }
 
   public renderFeatures(features: Feature[]) {
@@ -311,7 +307,7 @@ export class MapboxSource extends Source<geojson.Feature> {
       type: "FeatureCollection",
       features: features.reduce((acc, item) => {
         let res: geojson.Feature<geojson.LineString>[] = [];
-        lib.traverseShape(item, (positions, indices) => {
+        lib.traverseCoordinates(item, (positions, indices) => {
           res.push({
             id: item.id,
             type: "Feature",

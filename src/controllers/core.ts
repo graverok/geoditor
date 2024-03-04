@@ -5,25 +5,22 @@ import * as lib from "../lib";
 export class Core {
   private _source: Source;
   private _selected: number[] = [];
+  private _shapes: number[] = [];
   private _selectedPoints: Pick<Point, "indices" | "fid">[] = [];
   private _hovered: Partial<Record<LayerType, number | undefined>> | undefined;
   public addListener;
   public removeListener;
-  public setFeatureState;
-  public setPointState;
+  public setState;
   public setCursor;
   private readonly _onSelect!: (() => void) | undefined;
-  private readonly _getTools!: () => Record<string, (...args: any[]) => void>;
 
-  constructor(props: { source: Source; getTools: () => Record<string, (o?: any) => void>; onSelect?: () => void }) {
+  constructor(props: { source: Source; onSelect?: () => void }) {
     this._source = props.source;
     this._onSelect = props.onSelect;
-    this._getTools = props.getTools;
     this._handleGeometryEnter = this._handleGeometryEnter.bind(this);
     this.addListener = this._source.addListener;
     this.removeListener = this._source.removeListener;
-    this.setFeatureState = this._source.setFeatureState;
-    this.setPointState = this._source.setPointState;
+    this.setState = this._source.setState;
     this.setCursor = this._source.setCursor;
   }
 
@@ -39,6 +36,7 @@ export class Core {
   public reset() {
     this.selectedPoints = [];
     this.selected = [];
+    this.shapes = [];
     this._hovered = undefined;
     this.render("features", this.features);
     this.render("points", []);
@@ -46,10 +44,6 @@ export class Core {
 
   get hovered() {
     return this._hovered;
-  }
-
-  get tools() {
-    return this._getTools();
   }
 
   private _setHovered(type: LayerType, id?: number) {
@@ -66,8 +60,16 @@ export class Core {
   set selected(ids: number[]) {
     if (ids.length === this._selected.length && !ids.some((n) => !this._selected.includes(n))) return;
 
-    this._selected.forEach((id) => !ids.includes(id) && this.setFeatureState(id, { selected: false }));
-    ids.forEach((id) => !this._selected.includes(id) && this.setFeatureState(id, { selected: true }));
+    this._selected.forEach((id) => {
+      if (ids.includes(id)) return;
+      this.setState({ selected: false }, "lines", id);
+      this.setState({ selected: false }, "planes", id);
+    });
+    ids.forEach((id) => {
+      if (this._selected.includes(id)) return;
+      this.setState({ selected: true }, "lines", id);
+      this.setState({ selected: true }, "planes", id);
+    });
 
     this._selected = Array.from(ids);
     this._onSelect?.();
@@ -77,10 +79,18 @@ export class Core {
     return this._selected;
   }
 
+  set shapes(indices: number[]) {
+    this._shapes = indices;
+  }
+
+  get shapes() {
+    return this._shapes;
+  }
+
   set selectedPoints(nodes: Pick<Point, "fid" | "indices">[]) {
     const [toRemove, toAdd] = lib.comparePoints(this._selectedPoints, nodes);
-    toAdd.forEach((node) => this._source.setPointState(node, { selected: true }));
-    toRemove.forEach((node) => this._source.setPointState(node, { selected: false }));
+    toAdd.forEach((node) => this._source.setState({ selected: true }, "points", node.fid, node.indices));
+    toRemove.forEach((node) => this._source.setState({ selected: false }, "points", node.fid, node.indices));
     this._selectedPoints = nodes;
   }
 
@@ -92,7 +102,7 @@ export class Core {
     return this._selectedPoints.some((item) => item.fid === node.fid && lib.isArrayEqual(node.indices, item.indices));
   }
 
-  protected _handleGeometryEnter(e: SourceEvent) {
+  private _handleGeometryEnter(e: SourceEvent) {
     const layer = e.layer;
     if (!layer) return;
     let ids = e[layer].map((i) => i.fid) ?? [];

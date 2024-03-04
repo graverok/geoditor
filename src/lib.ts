@@ -17,18 +17,31 @@ const getPositions = (feature: Feature | undefined, indices: number[]): Position
   }
 };
 
-const traverseShape = (feature: Feature | undefined, callback: (positions: Position[], indices: number[]) => void) => {
-  if (!feature) return [];
+const traverseCoordinates = (
+  feature: Feature,
+  callback: (positions: Position[], indices: number[]) => Position[] | void,
+): Feature => {
   switch (feature.type) {
     case "LineString":
-      return callback(feature.coordinates, []);
+      return {
+        ...feature,
+        coordinates: callback(feature.coordinates, []) || feature.coordinates,
+      };
     case "Polygon":
     case "MultiLineString":
-      return feature.coordinates.forEach((positions, i) => callback(positions, [i]));
+      return {
+        ...feature,
+        coordinates: feature.coordinates.map((positions, i) => callback(positions, [i]) || positions),
+      };
     case "MultiPolygon":
-      return feature.coordinates.forEach((shapes, i) => shapes.forEach((positions, j) => callback(positions, [i, j])));
+      return {
+        ...feature,
+        coordinates: feature.coordinates.map((shapes, i) =>
+          shapes.map((positions, j) => callback(positions, [i, j]) || positions),
+        ),
+      };
     default:
-      return;
+      return feature;
   }
 };
 
@@ -73,9 +86,10 @@ const updateShape = (
   }
 };
 
-const createMiddlePoints = (features: Feature[]): Point<FeatureProps>[] => {
+const createMiddlePoints = (features: Feature[], shapes?: number[]): Point<FeatureProps>[] => {
   return features.reduce((acc, feature) => {
-    traverseShape(feature, (positions, indices) => {
+    traverseCoordinates(feature, (positions, indices) => {
+      if (shapes && !isArrayEqual(indices.slice(0, shapes.length), shapes)) return;
       const startIndex = toPoints(positions, feature.type).length;
       positions.slice(1).forEach((position, index) => {
         acc.push({
@@ -91,9 +105,10 @@ const createMiddlePoints = (features: Feature[]): Point<FeatureProps>[] => {
   }, [] as Point<FeatureProps>[]);
 };
 
-const createPoints = (features: Feature[]): Point<FeatureProps>[] => {
+const createPoints = (features: Feature[], shapes?: number[]): Point<FeatureProps>[] => {
   return features.reduce((acc, feature) => {
-    traverseShape(feature, (positions, indices) => {
+    traverseCoordinates(feature, (positions, indices) => {
+      if (shapes && !isArrayEqual(indices.slice(0, shapes.length), shapes)) return;
       toPoints(positions, feature.type).forEach((position, index) => {
         acc.push({
           fid: feature.id,
@@ -106,32 +121,6 @@ const createPoints = (features: Feature[]): Point<FeatureProps>[] => {
 
     return acc;
   }, [] as Point<FeatureProps>[]);
-};
-
-const moveFeatures = (features: Feature[], ids: number[], start: Position, end: Position) => {
-  return features.map((feature) => {
-    if (!ids.includes(feature.id)) return feature;
-
-    const mapper = (
-      data: Feature["coordinates"] | Position,
-      start: Position,
-      end: Position,
-    ): Feature["coordinates"] | Position => {
-      if (!Array.isArray(data[0])) {
-        const [lng, lat] = data as number[];
-
-        return math.normalize([
-          end[0] -
-            ((start[0] - lng) * Math.cos((lat / 180) * Math.PI)) /
-              Math.cos(((lat + end[1] - start[1]) / 180) * Math.PI),
-          lat + end[1] - start[1],
-        ]);
-      }
-      return (data as Feature["coordinates"]).map((item) => mapper(item, start, end)) as Feature["coordinates"];
-    };
-
-    return { ...feature, coordinates: mapper(feature.coordinates, start, end) } as Feature;
-  });
 };
 
 const toCoordinates = (positions: Position[], type?: Feature["type"]) => {
@@ -185,6 +174,13 @@ const math = {
     if (lat < -90) lat = -180 - lat;
     return [lng, lat];
   },
+  geodesic: (position: Position, from: Position, to: Position) =>
+    math.normalize([
+      to[0] -
+        ((from[0] - position[0]) * Math.cos((position[1] / 180) * Math.PI)) /
+          Math.cos(((position[1] + to[1] - from[1]) / 180) * Math.PI),
+      position[1] + to[1] - from[1],
+    ]),
 };
 
 const isArrayEqual = (a: number[], b: number[]) => {
@@ -209,7 +205,6 @@ export {
   updateShape,
   toPoints,
   toCoordinates,
-  traverseShape,
-  moveFeatures,
+  traverseCoordinates,
   math,
 };

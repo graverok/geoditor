@@ -7,7 +7,7 @@ export type AddSourcePayload = {
 };
 
 type ConfigParams<T> = { default: { [key in keyof T]: T[key] } } & Partial<
-  Record<"hovered" | "selected" | "selectedHovered" | "active" | "activeHovered", { [key in keyof T]: T[key] }>
+  Record<"disabled" | "hovered" | "selected" | "active", { [key in keyof T]: T[key] }>
 >;
 
 type LayerConfig = { type: Layer["type"]; paint: ConfigParams<AnyPaint>; layout?: AnyLayout };
@@ -57,7 +57,7 @@ export const defaultConfig: LayerConfig[] = [
         "fill-opacity": 0.15,
       },
       hovered: {
-        "fill-opacity": 0.18,
+        "fill-opacity": 0.15,
       },
       active: {
         "fill-opacity": 0.2,
@@ -73,11 +73,11 @@ export const defaultConfig: LayerConfig[] = [
         "line-opacity": 0.7,
       },
       selected: {
-        "line-width": 1.9,
+        "line-width": 2,
         "line-opacity": 1,
       },
       hovered: {
-        "line-width": 2.2,
+        "line-width": 2.3,
         "line-opacity": 1,
       },
       active: {
@@ -99,20 +99,17 @@ export const defaultConfig: LayerConfig[] = [
         "circle-color": ["get", "color"],
         "circle-stroke-color": ["get", "color"],
       },
-      hovered: {
-        "circle-radius": 2,
-        "circle-stroke-width": 1.5,
-        "circle-stroke-color": ["get", "color"],
-        "circle-color": "#FFFFFF",
-      },
       selected: {
         "circle-stroke-color": ["get", "color"],
         "circle-color": "#FFFFFF",
-        "circle-radius": 2.3,
+        "circle-radius": 2,
         "circle-stroke-width": 1.5,
       },
-      selectedHovered: {
-        "circle-radius": 3,
+      hovered: {
+        "circle-radius": 2.6,
+        "circle-stroke-width": 1.5,
+        "circle-stroke-color": ["get", "color"],
+        "circle-color": "#FFFFFF",
       },
       active: {
         "circle-stroke-color": "#FFFFFF",
@@ -139,9 +136,7 @@ export const generateLayers = (config: LayerConfig[]): Omit<Layer, "id">[] => {
                 ["boolean", ["feature-state", "hovered"], false],
                 ["boolean", ["feature-state", "active"], false],
               ],
-              item.paint.activeHovered?.[key] ||
-                item.paint.active?.[key] ||
-                item.paint.selectedHovered?.[key] ||
+              item.paint.active?.[key] ||
                 item.paint.hovered?.[key] ||
                 item.paint.selected?.[key] ||
                 item.paint.default[key],
@@ -152,10 +147,7 @@ export const generateLayers = (config: LayerConfig[]): Omit<Layer, "id">[] => {
                 ["boolean", ["feature-state", "hovered"], false],
                 ["boolean", ["feature-state", "selected"], false],
               ],
-              item.paint.selectedHovered?.[key] ||
-                item.paint.hovered?.[key] ||
-                item.paint.selected?.[key] ||
-                item.paint.default[key],
+              item.paint.hovered?.[key] || item.paint.selected?.[key] || item.paint.default[key],
               ["boolean", ["feature-state", "hovered"], false],
               item.paint.hovered?.[key] || item.paint.default[key],
               ["boolean", ["feature-state", "selected"], false],

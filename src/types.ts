@@ -50,9 +50,9 @@ export type Plane = {
   coordinates: Position[][];
 };
 
-export interface SourceEvent {
+export interface SourceEvent<O extends MouseEvent | TouchEvent = MouseEvent> {
   position: Position;
-  originalEvent: MouseEvent | TouchEvent;
+  originalEvent: O;
   layer?: LayerType;
   points: Point[];
   lines: Line[];

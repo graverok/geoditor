@@ -39,7 +39,6 @@ export class Geomeditor<T extends object> {
     this._core = new Core({
       source,
       onSelect: () => this._onSelect?.(),
-      getTools: () => this.tools,
     });
     this._source = source;
     this._tools = (tools ?? ["pen", "edit"]).reduce((res, item) => {
@@ -75,6 +74,7 @@ export class Geomeditor<T extends object> {
         item && {
           ...tools,
           [item.name]: (...args: Parameters<typeof item.enable>) => {
+            if (this._tool?.name === item.name) return;
             this._tool?.disable();
             this._tool = item;
             this._isLoaded && item.enable(...args);

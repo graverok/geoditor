@@ -14,8 +14,7 @@ export abstract class Source<T = object> {
   abstract addListener(...params: AddListenerParams): void;
   abstract removeListener(...params: RemoveListenerParams): void;
   abstract setCursor(value: string): (() => void) | undefined;
-  abstract setFeatureState(id: number | undefined, state: Record<string, boolean>): void;
-  abstract setPointState(node: Pick<Point, "indices" | "fid">, state: Record<string, boolean>): void;
+  abstract setState(state: Record<string, boolean>, layer: LayerType, id?: number, indices?: number[]): void;
   abstract remove(): void;
   abstract renderFeatures(features: Feature[]): void;
   abstract renderPoints(nodes: Point<FeatureProps>[]): void;

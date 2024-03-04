@@ -1,34 +1,34 @@
 import { AnyTool, Core } from "../controllers";
 import * as lib from "../lib";
-import { Point, Position, SourceEvent } from "../types";
-import { isPolygonLike } from "../lib";
+import { LayerType, Point, Position, SourceEvent } from "../types";
 
 export class EditTool extends AnyTool {
   private _isDragging = false;
   private _hovered: number | undefined;
   private _resetCursor!: (() => void) | undefined;
-  private _tid: number | undefined;
+  // private _tid: number | undefined;
 
   constructor(core: Core) {
     super(core);
     this._name = "edit";
     this._handleFeatureHover = this._handleFeatureHover.bind(this);
     this._handleFeatureDeselect = this._handleFeatureDeselect.bind(this);
-    this._handleFeaturesDrag = this._handleFeaturesDrag.bind(this);
-    this._handleFillMouseDown = this._handleFillMouseDown.bind(this);
-    this._handleLineMouseDown = this._handleLineMouseDown.bind(this);
+    this._handleGeometryMouseDown = this._handleGeometryMouseDown.bind(this);
     this._handlePointHover = this._handlePointHover.bind(this);
     this._handlePointDrag = this._handlePointDrag.bind(this);
   }
 
-  private _renderPlaceholderPoints() {
-    const points = lib.createPoints(this.core.getSelectedFeatures());
+  private _renderPoints() {
     if (this.core.selected.length === 1) {
-      this.core.render("points", [...points, ...lib.createMiddlePoints(this.core.getSelectedFeatures())]);
+      const points = lib.createPoints(this.core.getSelectedFeatures(), this.core.shapes);
+      this.core.render("points", [
+        ...points,
+        ...lib.createMiddlePoints(this.core.getSelectedFeatures(), this.core.shapes),
+      ]);
       this.core.selectedPoints = points;
     } else {
-      this.core.render("points", points);
       this.core.selectedPoints = [];
+      this.core.render("points", lib.createPoints(this.core.getSelectedFeatures()));
     }
   }
 
@@ -36,108 +36,173 @@ export class EditTool extends AnyTool {
     if (id === this._hovered) return;
     const prevId = this._hovered;
     this._hovered = id;
-    this._tid && clearTimeout(this._tid);
-    this._tid = +setTimeout(() => {
-      prevId && this.core.setFeatureState(prevId, { hovered: false });
-      id && this.core.setFeatureState(id, { hovered: true });
-      this.core.render("features", this.core.features);
-    }, 50);
+    // this._tid && clearTimeout(this._tid);
+
+    // const _hover = () => {
+
+    this.core.setState({ hovered: false }, "planes", prevId);
+    this.core.setState({ hovered: false }, "lines", prevId);
+    this.core.setState({ hovered: true }, "planes", this._hovered);
+    this.core.setState({ hovered: true }, "lines", this._hovered);
+    this.core.render("features", this.core.features);
+
+    // };
+
+    // if (!this._hovered || !prevId) return _hover();
+    // this._tid = +setTimeout(_hover, 50);
   }
 
   private _handleFeatureHover() {
     if (this._isDragging) return;
+    if (this.core.shapes.length) {
+      const anyHovered = this.core.hovered?.points || this.core.hovered?.lines || this.core.hovered?.planes;
+      this.core.setCursor(anyHovered && this.core.selected.includes(anyHovered) ? "pointer" : "default");
+      this._setHovered(anyHovered && this.core.selected.includes(anyHovered) ? anyHovered : undefined);
+      return;
+    }
     this.core.setCursor(this.core.hovered ? "pointer" : "default");
-    if (this.core.hovered?.points) return this._setHovered();
-    this._setHovered(this.core.hovered?.lines || this.core.hovered?.planes);
+    this._setHovered(this.core.hovered?.points || this.core.hovered?.lines || this.core.hovered?.planes);
   }
 
   private _handleFeatureDeselect() {
-    if (this._hovered) return;
+    if (this.core.shapes.length) {
+      const anyHovered = this.core.hovered?.points || this.core.hovered?.lines || this.core.hovered?.planes;
+      if (anyHovered && this.core.selected.includes(anyHovered)) return;
+    } else if (this.core.hovered) return;
+
     this.core.selectedPoints = [];
     this.core.selected = [];
-    this._renderPlaceholderPoints();
+    this.core.shapes = [];
+    this._handleFeatureHover();
+    this._renderPoints();
   }
 
-  private _handleFeaturesDrag(e: SourceEvent) {
-    if (!this._hovered) return;
+  private _handleGeometryMouseDown(e: SourceEvent) {
+    if (!this.core.hovered) return;
+    if (this.core.hovered.points && this.core.selected.length === 1) return;
+    if (e.layer === "planes" && this.core.hovered.lines) return;
+
+    const layer = e.layer as LayerType;
+    const geometry = e[layer].find((g) => g.fid === this.core.hovered?.[layer]);
+    let _release: undefined | (() => void);
+    if (geometry) {
+      if (!e.originalEvent.shiftKey) {
+        if (this.core.selected.includes(geometry.fid) && this.core.selected.length === 1) {
+          if (lib.isArrayEqual(this.core.shapes, geometry.indices)) {
+            _release = () => {
+              this.core.shapes = [];
+            };
+          }
+          this.core.shapes = geometry.indices;
+        } else {
+          if (this.core.shapes.length) return;
+          if (this.core.selected.includes(geometry.fid)) {
+            _release = () => {
+              this.core.selected = [geometry.fid];
+            };
+          } else {
+            this.core.selected = [geometry.fid];
+          }
+          this.core.shapes = [];
+        }
+      } else {
+        this.core.shapes = [];
+        if (this.core.selected.includes(geometry.fid)) {
+          _release = () => {
+            this.core.selected = this.core.selected.filter((id) => id !== geometry.fid);
+          };
+        } else {
+          this.core.selected = [...this.core.selected, geometry.fid];
+        }
+      }
+    }
+
     this._isDragging = true;
     let isChanged = false;
+    let features = this.core.features;
 
-    const id = this._hovered;
-    let nextPosition: Position = Array.from(e.position);
-    this.core.setFeatureState(id, { active: true });
-    const wasSelected = this.core.selected.includes(id);
-    const isShiftPressed = e.originalEvent.shiftKey;
-    if (!wasSelected) this.core.selected = [...(isShiftPressed ? this.core.selected : []), id];
+    const points = lib.createPoints(
+      features.filter((item) => this.core.selected.includes(item.id)),
+      this.core.shapes,
+    );
     this.core.selectedPoints = [];
-    this.core.render("points", lib.createPoints(this.core.getSelectedFeatures()));
+    this.core.render("points", points);
+    if (this.core.shapes.length) this.core.selectedPoints = points;
 
-    const _onMove = (ev: SourceEvent) => {
-      isChanged = true;
-      nextPosition = ev.position;
-      const features = lib.moveFeatures(this.core.features, this.core.selected, e.position, nextPosition);
+    this.core.selected.forEach((id) => {
+      this.core.setState({ active: true }, "lines", id);
+      this.core.setState({ active: true }, "planes", id);
+    });
+
+    const _onMove = (ev: SourceEvent<MouseEvent>) => {
+      if (!isChanged) {
+        if (
+          Math.abs(ev.originalEvent.pageX - e.originalEvent.pageX) <= 3 &&
+          Math.abs(ev.originalEvent.pageY - e.originalEvent.pageY) <= 3
+        )
+          return;
+        isChanged = true;
+      }
+      features = this.core.features.map((item) =>
+        this.core.selected.includes(item.id)
+          ? lib.traverseCoordinates(item, (positions, indices) =>
+              lib.isArrayEqual(this.core.shapes, indices.slice(0, this.core.shapes.length))
+                ? positions.map((pos) => lib.math.geodesic(pos, e.position, ev.position))
+                : positions,
+            )
+          : item,
+      );
       this.core.render("features", features);
-      this.core.render("points", lib.createPoints(features.filter((item) => this.core.selected.includes(item.id))));
+      this.core.render(
+        "points",
+        lib.createPoints(
+          features.filter((item) => this.core.selected.includes(item.id)),
+          this.core.shapes,
+        ),
+      );
     };
 
     const _onFinish = () => {
       this.core.removeListener("mousemove", _onMove);
-      this.core.setFeatureState(id, { active: false });
+      this.core.selected.forEach((id) => {
+        this.core.setState({ active: false }, "lines", id);
+        this.core.setState({ active: false }, "planes", id);
+      });
       this._isDragging = false;
       if (isChanged) {
-        this.core.features = lib.moveFeatures(this.core.features, this.core.selected, e.position, nextPosition);
-      } else if (wasSelected) {
-        this.core.selected =
-          !isShiftPressed || this.core.selected.length <= 1 ? [id] : this.core.selected.filter((item) => item !== id);
+        this.core.features = features;
+      } else {
+        _release?.();
+        this.refresh();
       }
-      this._renderPlaceholderPoints();
     };
 
     this.core.addListener("mousemove", _onMove);
     document.addEventListener("mouseup", _onFinish, { once: true });
   }
 
-  private _handleFillMouseDown(e: SourceEvent) {
-    if (!this._hovered) return;
-    if (this.core.hovered?.points && this.core.selected.length === 1) return;
-    if (this.core.hovered?.lines) return;
-    if (!this.core.selected.includes(this._hovered)) return this._handleFeaturesDrag(e);
-    if (e.originalEvent.shiftKey) return this._handleFeaturesDrag(e);
-    if (this.core.selected.length > 1 && this.core.selected.includes(this._hovered)) return this._handleFeaturesDrag(e);
-    console.log("geometry move");
-  }
-
-  private _handleLineMouseDown(e: SourceEvent) {
-    if (!this._hovered) return;
-    if (this.core.hovered?.points && this.core.selected.length === 1) return;
-    if (!this.core.selected.includes(this._hovered)) return this._handleFeaturesDrag(e);
-    if (e.originalEvent.shiftKey) return this._handleFeaturesDrag(e);
-    if (this.core.selected.length > 1 && this.core.selected.includes(this._hovered)) return this._handleFeaturesDrag(e);
-    console.log("geometry move");
-  }
-
   private _handlePointHover(e: SourceEvent) {
     if (this.core.selected.length !== 1) return;
     let point = e.points[0];
-    !this._isDragging && this.core.setPointState(point, { hovered: true });
+    !this._isDragging && this.core.setState({ hovered: true }, "points", point.fid, point.indices);
 
     const _onMove = (ev: SourceEvent) => {
       if (this._isDragging) return;
       if (lib.isArrayEqual(ev.points[0].indices ?? [], point.indices)) return;
-      this.core.setPointState(point, { hovered: false });
+      this.core.setState({ hovered: false }, "points", point.fid, point.indices);
       point = ev.points[0];
-      this.core.setPointState(point, { hovered: true });
+      this.core.setState({ hovered: true }, "points", point.fid, point.indices);
     };
 
     const _onLeave = () => {
-      !this._isDragging && this.core.setPointState(point, { hovered: false });
+      !this._isDragging && this.core.setState({ hovered: false }, "points", point.fid, point.indices);
       this.core.removeListener("mouseleave", "points", _onLeave);
       this.core.removeListener("mousemove", "points", _onMove);
       document.removeEventListener("mouseup", _onMouseUp);
     };
 
     const _onMouseUp = () => {
-      this.core.setPointState(point, { hovered: true });
+      this.core.setState({ hovered: true }, "points", point.fid, point.indices);
     };
 
     this.core.addListener("mouseleave", "points", _onLeave);
@@ -169,7 +234,8 @@ export class EditTool extends AnyTool {
 
     if (point.indices[pidx] >= points.length) {
       isChanged = true;
-      this.core.setPointState(point, { hovered: false });
+      this.core.setState({ hovered: false }, "points", point.fid, point.indices);
+
       point.indices[pidx] = (point.indices[pidx] % points.length) + 1;
       points = [...points.slice(0, point.indices[pidx]), point.coordinates, ...points.slice(point.indices[pidx])];
       feature = lib.updateShape(feature, point.indices.slice(0, pidx), lib.toCoordinates(points, feature.type));
@@ -181,11 +247,11 @@ export class EditTool extends AnyTool {
           [before, after].includes(n.indices[pidx]) &&
           lib.isArrayEqual(n.indices.slice(0, pidx), point.indices.slice(0, pidx)),
       );
-      sibling && this.core.setPointState(sibling, { hovered: true, active: true });
+      sibling && this.core.setState({ hovered: true, active: true }, "points", sibling.fid, sibling.indices);
     };
 
     const _onSiblingLeave = () => {
-      sibling && this.core.setPointState(sibling, { hovered: false, active: false });
+      sibling && this.core.setState({ hovered: false, active: false }, "points", sibling.fid, sibling.indices);
       sibling = undefined;
     };
 
@@ -213,21 +279,22 @@ export class EditTool extends AnyTool {
       this.core.selectedPoints = [];
 
       before >= 0 &&
-        this.core.setPointState(
-          { fid: point.fid, indices: [...point.indices.slice(0, pidx), before] },
-          { active: false, hovered: false },
-        );
+        this.core.setState({ active: false, hovered: false }, "points", point.fid, [
+          ...point.indices.slice(0, pidx),
+          before,
+        ]);
       after >= 0 &&
-        this.core.setPointState(
-          { fid: point.fid, indices: [...point.indices.slice(0, pidx), after] },
-          { active: false, hovered: false },
-        );
-      this.core.setPointState(point, { active: false });
+        this.core.setState({ active: false, hovered: false }, "points", point.fid, [
+          ...point.indices.slice(0, pidx),
+          after,
+        ]);
+
+      this.core.setState({ active: false }, "points", point.fid, point.indices);
 
       if (isChanged) {
         if (sibling && sibling.indices[pidx] === before) {
-          this.core.setPointState(point, { hovered: false });
-          this.core.setPointState(sibling, { hovered: true });
+          this.core.setState({ hovered: false }, "points", point.fid, point.indices);
+          this.core.setState({ hovered: true }, "points", sibling.fid, sibling.indices);
         }
 
         this.core.features = [
@@ -238,19 +305,19 @@ export class EditTool extends AnyTool {
 
         this.refresh();
       } else {
-        this._renderPlaceholderPoints();
+        this._renderPoints();
       }
       this._isDragging = false;
     };
 
     const before =
-      point.indices[pidx] === 0 ? (isPolygonLike(feature) ? points.length - 1 : -1) : point.indices[pidx] - 1;
+      point.indices[pidx] === 0 ? (lib.isPolygonLike(feature) ? points.length - 1 : -1) : point.indices[pidx] - 1;
     const after =
-      point.indices[pidx] === points.length - 1 ? (isPolygonLike(feature) ? 0 : -1) : point.indices[pidx] + 1;
+      point.indices[pidx] === points.length - 1 ? (lib.isPolygonLike(feature) ? 0 : -1) : point.indices[pidx] + 1;
 
     this.core.render("points", lib.createPoints([feature]));
     this.core.selectedPoints = [point];
-    this.core.setPointState(point, { active: true, hovered: true });
+    this.core.setState({ active: true, hovered: true }, "points", point.fid, point.indices);
     this.core.addListener("mousemove", _onMove);
     document.addEventListener("mouseup", _onFinish, { once: true });
 
@@ -271,7 +338,7 @@ export class EditTool extends AnyTool {
   public refresh() {
     this.core.selectedPoints = [];
     this.core.render("features", this.core.features);
-    this._renderPlaceholderPoints();
+    this._renderPoints();
   }
 
   public enable() {
@@ -280,17 +347,17 @@ export class EditTool extends AnyTool {
     this.core.addListener("mousemove", this._handleFeatureHover);
     this.core.addListener("click", this._handleFeatureDeselect);
     this.core.addListener("mousedown", "points", this._handlePointDrag);
-    this.core.addListener("mousedown", "lines", this._handleLineMouseDown);
-    this.core.addListener("mousedown", "planes", this._handleFillMouseDown);
-    this._renderPlaceholderPoints();
+    this.core.addListener("mousedown", "lines", this._handleGeometryMouseDown);
+    this.core.addListener("mousedown", "planes", this._handleGeometryMouseDown);
+    this._renderPoints();
   }
 
   public disable() {
     this.core.selectedPoints = [];
     this.core.removeListener("mousedown", "points", this._handlePointDrag);
     this.core.removeListener("mouseenter", "points", this._handlePointHover);
-    this.core.removeListener("mousedown", "planes", this._handleFillMouseDown);
-    this.core.removeListener("mousedown", "lines", this._handleLineMouseDown);
+    this.core.removeListener("mousedown", "planes", this._handleGeometryMouseDown);
+    this.core.removeListener("mousedown", "lines", this._handleGeometryMouseDown);
     this.core.removeListener("click", this._handleFeatureDeselect);
     this.core.removeListener("mousemove", this._handleFeatureHover);
     this._resetCursor?.();
