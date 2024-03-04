@@ -1,16 +1,16 @@
 import { Source } from "./source";
-import { LayerType, Feature, SourceMouseHandler, SourceEvent, Node } from "../types";
+import { LayerType, Feature, Point, FeatureProps, SourceEvent } from "../types";
 import * as lib from "../lib";
 
 export class Core {
   private _source: Source;
   private _selected: number[] = [];
-  private _selectedNodes: Omit<Node, "position">[] = [];
+  private _selectedPoints: Pick<Point, "indices" | "fid">[] = [];
   private _hovered: Partial<Record<LayerType, number | undefined>> | undefined;
   public addListener;
   public removeListener;
   public setFeatureState;
-  public setNodeState;
+  public setPointState;
   public setCursor;
   private readonly _onSelect!: (() => void) | undefined;
   private readonly _getTools!: () => Record<string, (...args: any[]) => void>;
@@ -23,7 +23,7 @@ export class Core {
     this.addListener = this._source.addListener;
     this.removeListener = this._source.removeListener;
     this.setFeatureState = this._source.setFeatureState;
-    this.setNodeState = this._source.setNodeState;
+    this.setPointState = this._source.setPointState;
     this.setCursor = this._source.setCursor;
   }
 
@@ -37,11 +37,11 @@ export class Core {
   }
 
   public reset() {
-    this.selectedNodes = [];
+    this.selectedPoints = [];
     this.selected = [];
     this._hovered = undefined;
     this.render("features", this.features);
-    this.render("nodes", []);
+    this.render("points", []);
   }
 
   get hovered() {
@@ -77,43 +77,43 @@ export class Core {
     return this._selected;
   }
 
-  set selectedNodes(nodes: Omit<Node, "position">[]) {
-    const [toRemove, toAdd] = lib.compareNodes(this._selectedNodes, nodes);
-    toAdd.forEach((node) => this._source.setNodeState(node, { selected: true }));
-    toRemove.forEach((node) => this._source.setNodeState(node, { selected: false }));
-    this._selectedNodes = nodes;
+  set selectedPoints(nodes: Pick<Point, "fid" | "indices">[]) {
+    const [toRemove, toAdd] = lib.comparePoints(this._selectedPoints, nodes);
+    toAdd.forEach((node) => this._source.setPointState(node, { selected: true }));
+    toRemove.forEach((node) => this._source.setPointState(node, { selected: false }));
+    this._selectedPoints = nodes;
   }
 
-  get selectedNodes() {
-    return this._selectedNodes;
+  get selectedPoints() {
+    return this._selectedPoints;
   }
 
-  public isNodeSelected(node: Node) {
-    return this._selectedNodes.some((item) => item.fid === node.fid && lib.isArrayEqual(node.indices, item.indices));
+  public isPointSelected(node: Point) {
+    return this._selectedPoints.some((item) => item.fid === node.fid && lib.isArrayEqual(node.indices, item.indices));
   }
 
   protected _handleGeometryEnter(e: SourceEvent) {
     const layer = e.layer;
     if (!layer) return;
-    let ids = layer !== "point" ? e.features.map((f) => f.id) : e.nodes.map((f) => f.fid);
+    let ids = e[layer].map((i) => i.fid) ?? [];
     this._setHovered(
       layer,
       ids.find((id) => this._selected.includes(id)) ||
-        ids.find((id) => [this._hovered?.point, this._hovered?.line, this.hovered?.plane].includes(id)) ||
+        ids.find((id) => [this._hovered?.points, this._hovered?.lines, this.hovered?.planes].includes(id)) ||
         ids[0],
     );
 
-    const handleMouseMove: SourceMouseHandler = (ev) => {
-      let ids = layer !== "point" ? ev.features.map((f) => f.id) : ev.nodes.map((f) => f.fid);
+    const handleMouseMove = (ev: SourceEvent) => {
+      ids = ev[layer].map((i) => i.fid) ?? [];
       this._setHovered(
         layer,
         ids.find((id) => this._selected.includes(id)) ||
-          ids.find((id) => [this._hovered?.point, this._hovered?.line, this.hovered?.plane].includes(id)) ||
+          ids.find((id) => [this._hovered?.points, this._hovered?.lines, this.hovered?.planes].includes(id)) ||
           ids[0],
       );
     };
 
-    const handleMouseLeave: SourceMouseHandler = () => {
+    const handleMouseLeave = () => {
       this._setHovered(layer);
 
       this._source.removeListener("mousemove", layer, handleMouseMove);
@@ -140,11 +140,11 @@ export class Core {
     return this._source.renderer;
   }
 
-  public render(type: "features" | "nodes", items: Feature[] | Node[]) {
+  public render(type: "features" | "points", items: Feature[] | Point<FeatureProps>[]) {
     switch (type) {
       case "features":
         const foreground = this._hovered
-          ? [this._hovered.point || this._hovered.line || this._hovered.plane]
+          ? [this._hovered.points || this._hovered.lines || this._hovered.planes]
           : this._selected;
 
         const sorted = [
@@ -153,21 +153,21 @@ export class Core {
         ] as Feature[];
 
         return this._source.renderFeatures(sorted);
-      case "nodes":
-        return this._source.renderNodes(items as Node[]);
+      case "points":
+        return this._source.renderPoints(items as Point<FeatureProps>[]);
     }
   }
 
   private _addHandlers() {
-    this._source.addListener("mouseenter", "point", this._handleGeometryEnter);
-    this._source.addListener("mouseenter", "line", this._handleGeometryEnter);
-    this._source.addListener("mouseenter", "plane", this._handleGeometryEnter);
+    this._source.addListener("mouseenter", "points", this._handleGeometryEnter);
+    this._source.addListener("mouseenter", "lines", this._handleGeometryEnter);
+    this._source.addListener("mouseenter", "planes", this._handleGeometryEnter);
   }
 
   private _removeHandlers() {
-    this._source.removeListener("mouseenter", "point", this._handleGeometryEnter);
-    this._source.removeListener("mouseenter", "line", this._handleGeometryEnter);
-    this._source.removeListener("mouseenter", "plane", this._handleGeometryEnter);
+    this._source.removeListener("mouseenter", "points", this._handleGeometryEnter);
+    this._source.removeListener("mouseenter", "lines", this._handleGeometryEnter);
+    this._source.removeListener("mouseenter", "planes", this._handleGeometryEnter);
   }
 
   public remove() {

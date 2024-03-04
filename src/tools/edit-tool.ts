@@ -1,6 +1,7 @@
 import { AnyTool, Core } from "../controllers";
 import * as lib from "../lib";
-import { Node, Position, SourceEvent } from "../types";
+import { Point, Position, SourceEvent } from "../types";
+import { isPolygonLike } from "../lib";
 
 export class EditTool extends AnyTool {
   private _isDragging = false;
@@ -14,20 +15,20 @@ export class EditTool extends AnyTool {
     this._handleFeatureHover = this._handleFeatureHover.bind(this);
     this._handleFeatureDeselect = this._handleFeatureDeselect.bind(this);
     this._handleFeaturesDrag = this._handleFeaturesDrag.bind(this);
-    this._handleFillDrag = this._handleFillDrag.bind(this);
-    this._handleLineDrag = this._handleLineDrag.bind(this);
+    this._handleFillMouseDown = this._handleFillMouseDown.bind(this);
+    this._handleLineMouseDown = this._handleLineMouseDown.bind(this);
     this._handlePointHover = this._handlePointHover.bind(this);
     this._handlePointDrag = this._handlePointDrag.bind(this);
   }
 
-  private _renderPlaceholderNodes() {
-    const nodes = lib.createNodes(this.core.getSelectedFeatures());
+  private _renderPlaceholderPoints() {
+    const points = lib.createPoints(this.core.getSelectedFeatures());
     if (this.core.selected.length === 1) {
-      this.core.render("nodes", [...nodes, ...lib.createPlaceholderNodes(this.core.getSelectedFeatures())]);
-      this.core.selectedNodes = nodes;
+      this.core.render("points", [...points, ...lib.createMiddlePoints(this.core.getSelectedFeatures())]);
+      this.core.selectedPoints = points;
     } else {
-      this.core.render("nodes", nodes);
-      this.core.selectedNodes = [];
+      this.core.render("points", points);
+      this.core.selectedPoints = [];
     }
   }
 
@@ -39,45 +40,44 @@ export class EditTool extends AnyTool {
     this._tid = +setTimeout(() => {
       prevId && this.core.setFeatureState(prevId, { hovered: false });
       id && this.core.setFeatureState(id, { hovered: true });
+      this.core.render("features", this.core.features);
     }, 50);
   }
 
   private _handleFeatureHover() {
     if (this._isDragging) return;
     this.core.setCursor(this.core.hovered ? "pointer" : "default");
-    this._setHovered(this.core.hovered?.point || this.core.hovered?.line || this.core.hovered?.plane);
+    if (this.core.hovered?.points) return this._setHovered();
+    this._setHovered(this.core.hovered?.lines || this.core.hovered?.planes);
   }
 
   private _handleFeatureDeselect() {
     if (this._hovered) return;
-    this.core.selectedNodes = [];
+    this.core.selectedPoints = [];
     this.core.selected = [];
-    this._renderPlaceholderNodes();
+    this._renderPlaceholderPoints();
   }
 
   private _handleFeaturesDrag(e: SourceEvent) {
+    if (!this._hovered) return;
     this._isDragging = true;
     let isChanged = false;
-    if (!this._hovered) return;
 
     const id = this._hovered;
     let nextPosition: Position = Array.from(e.position);
     this.core.setFeatureState(id, { active: true });
-    const isSelected = this.core.selected.includes(id);
+    const wasSelected = this.core.selected.includes(id);
     const isShiftPressed = e.originalEvent.shiftKey;
-    if (!isSelected) {
-      this.core.selected = [...(isShiftPressed ? this.core.selected : []), id];
-    }
-
-    this.core.selectedNodes = [];
-    this.core.render("nodes", lib.createNodes(this.core.getSelectedFeatures()));
+    if (!wasSelected) this.core.selected = [...(isShiftPressed ? this.core.selected : []), id];
+    this.core.selectedPoints = [];
+    this.core.render("points", lib.createPoints(this.core.getSelectedFeatures()));
 
     const _onMove = (ev: SourceEvent) => {
       isChanged = true;
       nextPosition = ev.position;
       const features = lib.moveFeatures(this.core.features, this.core.selected, e.position, nextPosition);
       this.core.render("features", features);
-      this.core.render("nodes", lib.createNodes(features.filter((item) => this.core.selected.includes(item.id))));
+      this.core.render("points", lib.createPoints(features.filter((item) => this.core.selected.includes(item.id))));
     };
 
     const _onFinish = () => {
@@ -86,177 +86,182 @@ export class EditTool extends AnyTool {
       this._isDragging = false;
       if (isChanged) {
         this.core.features = lib.moveFeatures(this.core.features, this.core.selected, e.position, nextPosition);
-      } else if (isSelected) {
+      } else if (wasSelected) {
         this.core.selected =
           !isShiftPressed || this.core.selected.length <= 1 ? [id] : this.core.selected.filter((item) => item !== id);
       }
-      this._renderPlaceholderNodes();
+      this._renderPlaceholderPoints();
     };
 
     this.core.addListener("mousemove", _onMove);
     document.addEventListener("mouseup", _onFinish, { once: true });
   }
 
-  private _handleFillDrag(e: SourceEvent) {
-    if (this.core.hovered?.point && this.core.selected.length === 1) return;
-    if (this.core.hovered?.line) return;
-    this._handleFeaturesDrag(e);
+  private _handleFillMouseDown(e: SourceEvent) {
+    if (!this._hovered) return;
+    if (this.core.hovered?.points && this.core.selected.length === 1) return;
+    if (this.core.hovered?.lines) return;
+    if (!this.core.selected.includes(this._hovered)) return this._handleFeaturesDrag(e);
+    if (e.originalEvent.shiftKey) return this._handleFeaturesDrag(e);
+    if (this.core.selected.length > 1 && this.core.selected.includes(this._hovered)) return this._handleFeaturesDrag(e);
+    console.log("geometry move");
   }
 
-  private _handleLineDrag(e: SourceEvent) {
-    if (this.core.hovered?.point && this.core.selected.length === 1) return;
-    this._handleFeaturesDrag(e);
+  private _handleLineMouseDown(e: SourceEvent) {
+    if (!this._hovered) return;
+    if (this.core.hovered?.points && this.core.selected.length === 1) return;
+    if (!this.core.selected.includes(this._hovered)) return this._handleFeaturesDrag(e);
+    if (e.originalEvent.shiftKey) return this._handleFeaturesDrag(e);
+    if (this.core.selected.length > 1 && this.core.selected.includes(this._hovered)) return this._handleFeaturesDrag(e);
+    console.log("geometry move");
   }
 
   private _handlePointHover(e: SourceEvent) {
     if (this.core.selected.length !== 1) return;
-    let node = e.nodes[0];
-    !this._isDragging && this.core.setNodeState(node, { hovered: true });
+    let point = e.points[0];
+    !this._isDragging && this.core.setPointState(point, { hovered: true });
 
     const _onMove = (ev: SourceEvent) => {
       if (this._isDragging) return;
-      if (lib.isArrayEqual(ev.nodes[0].indices ?? [], node.indices)) return;
-      this.core.setNodeState(node, { hovered: false });
-      node = ev.nodes[0];
-      this.core.setNodeState(node, { hovered: true });
+      if (lib.isArrayEqual(ev.points[0].indices ?? [], point.indices)) return;
+      this.core.setPointState(point, { hovered: false });
+      point = ev.points[0];
+      this.core.setPointState(point, { hovered: true });
     };
 
     const _onLeave = () => {
-      !this._isDragging && this.core.setNodeState(node, { hovered: false });
-      this.core.removeListener("mouseleave", "point", _onLeave);
-      this.core.removeListener("mousemove", "point", _onMove);
+      !this._isDragging && this.core.setPointState(point, { hovered: false });
+      this.core.removeListener("mouseleave", "points", _onLeave);
+      this.core.removeListener("mousemove", "points", _onMove);
       document.removeEventListener("mouseup", _onMouseUp);
     };
 
     const _onMouseUp = () => {
-      this.core.setNodeState(node, { hovered: true });
+      this.core.setPointState(point, { hovered: true });
     };
 
-    this.core.addListener("mouseleave", "point", _onLeave);
-    this.core.addListener("mousemove", "point", _onMove);
+    this.core.addListener("mouseleave", "points", _onLeave);
+    this.core.addListener("mousemove", "points", _onMove);
     this._isDragging && document.addEventListener("mouseup", _onMouseUp, { once: true });
   }
 
   private _handlePointDrag(e: SourceEvent) {
     if (this.core.selected.length !== 1) return;
-    let node = e.nodes[0];
-    let feature = this.core.getFeature(node?.fid);
-    if (!node || !feature) return;
+    let point = e.points[0];
+    let feature = this.core.getFeature(point?.fid);
+    if (!point || !feature) return;
 
-    this.core.selectedNodes = [];
-    let nextPosition = node.position;
-    let siblingNode: Node | undefined;
+    this.core.selectedPoints = [];
+    let nextPosition = point.coordinates;
+    let sibling: Point | undefined;
     this.core.selected = [feature.id];
     this._isDragging = true;
 
-    const pidx = node.indices.length - 1;
-    let points = lib.openShape(lib.getShape(feature, node.indices), feature.type);
+    const pidx = point.indices.length - 1;
+    let points = lib.toPoints(lib.getPositions(feature, point.indices), feature.type);
     let isChanged = false;
 
     const _updater = (next?: Position) =>
-      lib.closeShape(
-        [...points.slice(0, node.indices[pidx]), ...(next ? [next] : []), ...points.slice(node.indices[pidx] + 1)],
+      lib.toCoordinates(
+        [...points.slice(0, point.indices[pidx]), ...(next ? [next] : []), ...points.slice(point.indices[pidx] + 1)],
         feature?.type,
       );
 
-    if (node.indices[pidx] >= points.length) {
+    if (point.indices[pidx] >= points.length) {
       isChanged = true;
-      this.core.setNodeState(node, { hovered: false });
-      node.indices[pidx] = (node.indices[pidx] % points.length) + 1;
-      points = [...points.slice(0, node.indices[pidx]), node.position, ...points.slice(node.indices[pidx])];
-      feature = lib.updateShape(feature, node.indices.slice(0, pidx), lib.closeShape(points, feature.type));
+      this.core.setPointState(point, { hovered: false });
+      point.indices[pidx] = (point.indices[pidx] % points.length) + 1;
+      points = [...points.slice(0, point.indices[pidx]), point.coordinates, ...points.slice(point.indices[pidx])];
+      feature = lib.updateShape(feature, point.indices.slice(0, pidx), lib.toCoordinates(points, feature.type));
     }
 
     const _onSiblingEnter = (ev: SourceEvent) => {
-      siblingNode = ev.nodes.find(
+      sibling = ev.points.find(
         (n) =>
           [before, after].includes(n.indices[pidx]) &&
-          lib.isArrayEqual(n.indices.slice(0, pidx), node.indices.slice(0, pidx)),
+          lib.isArrayEqual(n.indices.slice(0, pidx), point.indices.slice(0, pidx)),
       );
-      siblingNode && this.core.setNodeState(siblingNode, { hovered: true, active: true });
+      sibling && this.core.setPointState(sibling, { hovered: true, active: true });
     };
 
     const _onSiblingLeave = () => {
-      siblingNode && this.core.setNodeState(siblingNode, { hovered: false, active: false });
-      siblingNode = undefined;
+      sibling && this.core.setPointState(sibling, { hovered: false, active: false });
+      sibling = undefined;
     };
 
     const _onMove = (ev: SourceEvent) => {
       if (!feature) return;
       isChanged = true;
       nextPosition = lib.math.normalize(
-        siblingNode?.position || lib.math.add(node.position, lib.math.subtract(e.position, ev.position)),
+        sibling?.coordinates || lib.math.add(point.coordinates, lib.math.subtract(e.position, ev.position)),
       );
-      feature = lib.updateShape(feature, node.indices.slice(0, pidx), _updater(nextPosition));
+      feature = lib.updateShape(feature, point.indices.slice(0, pidx), _updater(nextPosition));
       this.core.render("features", [
-        ...this.core.features.slice(0, node.fid - 1),
+        ...this.core.features.slice(0, point.fid - 1),
         feature,
-        ...this.core.features.slice(node.fid),
+        ...this.core.features.slice(point.fid),
       ]);
-      this.core.render("nodes", lib.createNodes([feature]));
+      this.core.render("points", lib.createPoints([feature]));
     };
 
     const _onFinish = () => {
       this.core.removeListener("mousemove", _onMove);
-      this.core.removeListener("mousemove", "point", _onSiblingEnter);
-      this.core.removeListener("mouseleave", "point", _onSiblingLeave);
+      this.core.removeListener("mousemove", "points", _onSiblingEnter);
+      this.core.removeListener("mouseleave", "points", _onSiblingLeave);
 
       if (!feature) return;
-      this.core.selectedNodes = [];
+      this.core.selectedPoints = [];
 
       before >= 0 &&
-        this.core.setNodeState(
-          { fid: node.fid, indices: [...node.indices.slice(0, pidx), before] },
+        this.core.setPointState(
+          { fid: point.fid, indices: [...point.indices.slice(0, pidx), before] },
           { active: false, hovered: false },
         );
       after >= 0 &&
-        this.core.setNodeState(
-          { fid: node.fid, indices: [...node.indices.slice(0, pidx), after] },
+        this.core.setPointState(
+          { fid: point.fid, indices: [...point.indices.slice(0, pidx), after] },
           { active: false, hovered: false },
         );
-      this.core.setNodeState(node, { active: false });
+      this.core.setPointState(point, { active: false });
 
       if (isChanged) {
-        if (siblingNode && siblingNode.indices[pidx] === before) {
-          this.core.setNodeState(node, { hovered: false });
-          this.core.setNodeState(siblingNode, { hovered: true });
+        if (sibling && sibling.indices[pidx] === before) {
+          this.core.setPointState(point, { hovered: false });
+          this.core.setPointState(sibling, { hovered: true });
         }
 
         this.core.features = [
-          ...this.core.features.slice(0, node.fid - 1),
-          lib.updateShape(feature, node.indices.slice(0, pidx), _updater(siblingNode ? undefined : nextPosition)),
-          ...this.core.features.slice(node.fid),
+          ...this.core.features.slice(0, point.fid - 1),
+          lib.updateShape(feature, point.indices.slice(0, pidx), _updater(sibling ? undefined : nextPosition)),
+          ...this.core.features.slice(point.fid),
         ];
 
         this.refresh();
       } else {
-        this._renderPlaceholderNodes();
+        this._renderPlaceholderPoints();
       }
       this._isDragging = false;
     };
 
     const before =
-      node.indices[pidx] === 0 ? (feature.type === "Polygon" ? points.length - 1 : -1) : node.indices[pidx] - 1;
+      point.indices[pidx] === 0 ? (isPolygonLike(feature) ? points.length - 1 : -1) : point.indices[pidx] - 1;
     const after =
-      node.indices[pidx] === points.length - 1 ? (feature.type === "Polygon" ? 0 : -1) : node.indices[pidx] + 1;
-    this.core.render("nodes", lib.createNodes([feature]));
-    this.core.selectedNodes = [node];
-    this.core.setNodeState(node, { active: true, hovered: true });
+      point.indices[pidx] === points.length - 1 ? (isPolygonLike(feature) ? 0 : -1) : point.indices[pidx] + 1;
+
+    this.core.render("points", lib.createPoints([feature]));
+    this.core.selectedPoints = [point];
+    this.core.setPointState(point, { active: true, hovered: true });
     this.core.addListener("mousemove", _onMove);
     document.addEventListener("mouseup", _onFinish, { once: true });
 
-    if (points.length <= 2 + Number(feature.type === "Polygon")) return;
-    this.core.selectedNodes = [
-      ...this.core.selectedNodes,
-      ...(before >= 0
-        ? [{ fid: node.fid, props: feature.props, indices: [...node.indices.slice(0, pidx), before] }]
-        : []),
-      ...(after >= 0
-        ? [{ fid: node.fid, props: feature.props, indices: [...node.indices.slice(0, pidx), after] }]
-        : []),
+    if (points.length <= 2 + Number(lib.isPolygonLike(feature))) return;
+    this.core.selectedPoints = [
+      ...this.core.selectedPoints,
+      ...(before >= 0 ? [{ fid: point.fid, indices: [...point.indices.slice(0, pidx), before] }] : []),
+      ...(after >= 0 ? [{ fid: point.fid, indices: [...point.indices.slice(0, pidx), after] }] : []),
     ];
-    this.core.addListener("mousemove", "point", _onSiblingEnter);
-    this.core.addListener("mouseleave", "point", _onSiblingLeave);
+    this.core.addListener("mousemove", "points", _onSiblingEnter);
+    this.core.addListener("mouseleave", "points", _onSiblingLeave);
   }
 
   get config() {
@@ -264,28 +269,28 @@ export class EditTool extends AnyTool {
   }
 
   public refresh() {
-    this.core.selectedNodes = [];
+    this.core.selectedPoints = [];
     this.core.render("features", this.core.features);
-    this._renderPlaceholderNodes();
+    this._renderPlaceholderPoints();
   }
 
   public enable() {
     this._resetCursor = this.core.setCursor("default");
-    this.core.addListener("mouseenter", "point", this._handlePointHover);
+    this.core.addListener("mouseenter", "points", this._handlePointHover);
     this.core.addListener("mousemove", this._handleFeatureHover);
     this.core.addListener("click", this._handleFeatureDeselect);
-    this.core.addListener("mousedown", "point", this._handlePointDrag);
-    this.core.addListener("mousedown", "line", this._handleLineDrag);
-    this.core.addListener("mousedown", "plane", this._handleFillDrag);
-    this._renderPlaceholderNodes();
+    this.core.addListener("mousedown", "points", this._handlePointDrag);
+    this.core.addListener("mousedown", "lines", this._handleLineMouseDown);
+    this.core.addListener("mousedown", "planes", this._handleFillMouseDown);
+    this._renderPlaceholderPoints();
   }
 
   public disable() {
-    this.core.selectedNodes = [];
-    this.core.removeListener("mousedown", "point", this._handlePointDrag);
-    this.core.removeListener("mouseenter", "point", this._handlePointHover);
-    this.core.removeListener("mousedown", "plane", this._handleFillDrag);
-    this.core.removeListener("mousedown", "line", this._handleLineDrag);
+    this.core.selectedPoints = [];
+    this.core.removeListener("mousedown", "points", this._handlePointDrag);
+    this.core.removeListener("mouseenter", "points", this._handlePointHover);
+    this.core.removeListener("mousedown", "planes", this._handleFillMouseDown);
+    this.core.removeListener("mousedown", "lines", this._handleLineMouseDown);
     this.core.removeListener("click", this._handleFeatureDeselect);
     this.core.removeListener("mousemove", this._handleFeatureHover);
     this._resetCursor?.();

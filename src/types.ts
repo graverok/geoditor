@@ -1,10 +1,5 @@
 export type Position = number[];
 
-export type Point = {
-  type: "Point";
-  coordinates: Position;
-};
-
 export type LineString = {
   type: "LineString";
   coordinates: Position[];
@@ -26,29 +21,43 @@ export type MultiPolygon = {
 };
 
 export type DrawType = "LineString" | "Polygon";
-export type LayerType = "point" | "line" | "plane";
+export type LayerType = "points" | "lines" | "planes";
+export type FeatureProps = {
+  color?: string;
+} & Record<string, any>;
 
-export type Feature<T = LineString | Polygon | MultiLineString | MultiPolygon> = T & {
+export type Feature<T = LineString | Polygon | MultiLineString | MultiPolygon, P = FeatureProps> = T & {
   id: number;
-  props?: {
-    color?: string;
-  } & Record<string, any>;
+  props?: P;
 };
 
-export type Node = {
+export type Point<P = undefined> = {
   fid: number;
   indices: number[];
-  position: Position;
-  props?: Feature["props"];
+  coordinates: Position;
+  props?: P;
 };
 
-export type SourceEvent = {
+export type Line = {
+  fid: number;
+  indices: number[];
+  coordinates: Position[];
+};
+
+export type Plane = {
+  fid: number;
+  indices: number[];
+  coordinates: Position[][];
+};
+
+export interface SourceEvent {
   position: Position;
-  features: Feature[];
-  nodes: Node[];
   originalEvent: MouseEvent | TouchEvent;
   layer?: LayerType;
-};
+  points: Point[];
+  lines: Line[];
+  planes: Plane[];
+}
 
-export type SourceEventOptions = { once?: boolean } | undefined;
-export type SourceMouseHandler = (e: SourceEvent) => void;
+export type SourceEventHandler = (e: SourceEvent) => void;
+export type SourceEventOptions = { once?: boolean };

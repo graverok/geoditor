@@ -1,6 +1,6 @@
 import { AnyTool, Core } from "../controllers";
 import * as lib from "../lib";
-import { DrawType, Feature, LineString, Node, Polygon, Position, SourceEvent } from "../types";
+import { DrawType, Feature, LineString, Point, Polygon, Position, SourceEvent } from "../types";
 
 export class PenTool extends AnyTool {
   private _geometry: Position[] | undefined;
@@ -27,7 +27,7 @@ export class PenTool extends AnyTool {
 
   private _activateFinishNodes() {
     if (!this._geometry) {
-      this.core.selectedNodes = [];
+      this.core.selectedPoints = [];
       return;
     }
 
@@ -35,20 +35,20 @@ export class PenTool extends AnyTool {
     const feature = this._getFeature();
 
     if (feature) {
-      let shape = lib.openShape(lib.getShape(feature, this._indices), feature.type);
+      let shape = lib.toPoints(lib.getPositions(feature, this._indices), feature.type);
       if (this._isReversed) shape.reverse();
       _geometry = [...shape, ...this._geometry];
     }
 
     /** New Feature */
     if (Number(this._types.includes("LineString")) + _geometry.length < 3) {
-      this.core.selectedNodes = [];
+      this.core.selectedPoints = [];
       return;
     }
 
     const _types: Feature["type"][] = feature && feature?.type !== "LineString" ? [feature.type] : this._types;
 
-    this.core.selectedNodes = [
+    this.core.selectedPoints = [
       ...((_types.includes("Polygon") || _types.includes("MultiPolygon")) && _geometry.length >= 3
         ? [{ fid: this.core.selected[0], indices: [...this._indices, 0] }]
         : []),
@@ -57,16 +57,16 @@ export class PenTool extends AnyTool {
   }
 
   private _activateStartingNodes(features: Feature[]) {
-    let nodes: Omit<Node, "position">[] = [];
+    let points: Omit<Point, "coordinates">[] = [];
     features.forEach((feature) => {
       if (!feature) return;
       if (feature.type !== "LineString" && feature.type !== "MultiLineString") return;
-      lib.traverseShapes(feature, (positions, indices) => {
-        nodes.push({ fid: feature.id, indices: [...indices, 0] });
-        nodes.push({ fid: feature.id, indices: [...indices, positions.length - 1] });
+      lib.traverseShape(feature, (positions, indices) => {
+        points.push({ fid: feature.id, indices: [...indices, 0] });
+        points.push({ fid: feature.id, indices: [...indices, positions.length - 1] });
       });
     });
-    this.core.selectedNodes = nodes;
+    this.core.selectedPoints = points;
   }
 
   private _getFeature() {
@@ -81,7 +81,7 @@ export class PenTool extends AnyTool {
 
   private _getShapeGeometry(geometry: Position[], asRender = true) {
     let feature = this._getFeature();
-    let shape = feature ? lib.openShape(lib.getShape(feature, this._indices), feature.type) : [];
+    let shape = feature ? lib.toPoints(lib.getPositions(feature, this._indices), feature.type) : [];
     if (asRender) {
       if (this._isReversed) shape.reverse();
       return [...shape, ...geometry];
@@ -90,11 +90,11 @@ export class PenTool extends AnyTool {
     }
   }
 
-  private _getRenderFeature(feature: Feature | undefined, geometry: Position[], node?: Node) {
+  private _getRenderFeature(feature: Feature | undefined, geometry: Position[], point?: Point) {
     const renderType: Feature["type"] =
       !feature || feature.type === "LineString"
         ? (this._types.includes("LineString") || geometry.length < 3) &&
-          (!node || node.indices[node.indices.length - 1] !== 0)
+          (!point || point.indices[point.indices.length - 1] !== 0)
           ? "LineString"
           : "Polygon"
         : feature.type;
@@ -112,7 +112,7 @@ export class PenTool extends AnyTool {
           }
         : { id: this.core.selected[0], type: renderType, props: this._props },
       _indices,
-      lib.closeShape(geometry, renderType),
+      lib.toCoordinates(geometry, renderType),
     );
   }
 
@@ -131,7 +131,7 @@ export class PenTool extends AnyTool {
         props: _feature ? _feature?.props : this._props,
       };
       this.core.render("features", [...this.core.features, _feature]);
-      !next && this.core.render("nodes", lib.createNodes([_feature]));
+      !next && this.core.render("points", lib.createPoints([_feature]));
       return;
     }
 
@@ -141,7 +141,7 @@ export class PenTool extends AnyTool {
       _feature,
       ...this.core.features.slice(this.core.selected[0]),
     ]);
-    !next && this.core.render("nodes", lib.createNodes([_feature]));
+    !next && this.core.render("points", lib.createPoints([_feature]));
   }
 
   private _handleModifyKey(e: KeyboardEvent) {
@@ -149,8 +149,8 @@ export class PenTool extends AnyTool {
   }
 
   private _handleCanvasMouseMove(e: SourceEvent) {
-    if (!this.core.hovered?.point) this._ignoreMapEvents = false;
-    this.core.setCursor(this.core.hovered?.point && this._ignoreMapEvents ? "pointer" : "crosshair");
+    if (!this.core.hovered?.points) this._ignoreMapEvents = false;
+    this.core.setCursor(this.core.hovered?.points && this._ignoreMapEvents ? "pointer" : "crosshair");
     if (this._ignoreMapEvents) return;
     if (!this._geometry) return;
 
@@ -161,15 +161,15 @@ export class PenTool extends AnyTool {
     if (this._ignoreMapEvents) return;
 
     if (this._geometry) {
-      this.core.selectedNodes = [];
+      this.core.selectedPoints = [];
       this._geometry = [...this._geometry, e.position];
       this._render();
       this._activateFinishNodes();
 
-      /** Hover current node */
-      if (this.core.selectedNodes.length) {
+      /** Hover current point */
+      if (this.core.selectedPoints.length) {
         const _geometry = this._getShapeGeometry(this._geometry);
-        this.core.setNodeState(
+        this.core.setPointState(
           { fid: this.core.selected[0], indices: [...this._indices, _geometry.length - 1] },
           { hovered: true },
         );
@@ -209,7 +209,7 @@ export class PenTool extends AnyTool {
     const id = this.core.features.length + 1;
     this._geometry = [e.position];
     this._indices = this._types.includes("LineString") ? [] : [0];
-    this.core.selectedNodes = [];
+    this.core.selectedPoints = [];
     this.core.selected = [id];
     this._storedSelected = undefined;
     this._render();
@@ -217,39 +217,39 @@ export class PenTool extends AnyTool {
   }
 
   private _handlePointMouseEnter(e: SourceEvent) {
-    const node = e.nodes.find((n) => this.core.isNodeSelected(n));
-    if (!node) return;
+    const point = e.points.find((n) => this.core.isPointSelected(n));
+    if (!point) return;
     this._ignoreMapEvents = true;
 
     const handleMouseLeave = () => {
       this._ignoreMapEvents = false;
-      this.core.setNodeState(node, { hovered: false });
-      this.core.removeListener("mouseleave", "point", handleMouseLeave);
+      this.core.setPointState(point, { hovered: false });
+      this.core.removeListener("mouseleave", "points", handleMouseLeave);
     };
 
-    this.core.setNodeState(node, { hovered: true });
-    this.core.addListener("mouseleave", "point", handleMouseLeave);
+    this.core.setPointState(point, { hovered: true });
+    this.core.addListener("mouseleave", "points", handleMouseLeave);
 
     if (!this._geometry) return;
-    this._render(node.position);
+    this._render(point.coordinates);
   }
 
   private _handlePointMouseDown(e: SourceEvent) {
-    const node = e.nodes.find((n) => this.core.isNodeSelected(n));
-    if (!node) return;
+    const point = e.points.find((n) => this.core.isPointSelected(n));
+    if (!point) return;
     this._ignoreMapEvents = true;
-    this.core.setNodeState(node, { active: true });
-    document.addEventListener("mouseup", () => this.core.setNodeState(node, { active: false }), { once: true });
+    this.core.setPointState(point, { active: true });
+    document.addEventListener("mouseup", () => this.core.setPointState(point, { active: false }), { once: true });
   }
 
   private _handlePointClick(e: SourceEvent) {
-    const node = e.nodes.find((n) => this.core.isNodeSelected(n));
-    if (!node) return;
+    const point = e.points.find((n) => this.core.isPointSelected(n));
+    if (!point) return;
     if (this._geometry) {
       this._ignoreMapEvents = true;
 
-      const feature = this._getRenderFeature(this._getFeature(), this._getShapeGeometry(this._geometry, false), node);
-      this.core.setNodeState(node, { hovered: false });
+      const feature = this._getRenderFeature(this._getFeature(), this._getShapeGeometry(this._geometry, false), point);
+      this.core.setPointState(point, { hovered: false });
       this._resetDraw();
       this._activateStartingNodes([feature]);
       this.core.features = [
@@ -258,13 +258,13 @@ export class PenTool extends AnyTool {
         ...this.core.features.slice(this.core.selected[0]),
       ];
     } else {
-      this.core.setNodeState(node, { hovered: false });
-      this.core.selectedNodes = [];
-      this.core.selected = [node.fid];
+      this.core.setPointState(point, { hovered: false });
+      this.core.selectedPoints = [];
+      this.core.selected = [point.fid];
       this._storedSelected = undefined;
       this._geometry = [];
-      this._indices = node.indices.slice(0, node.indices.length - 1);
-      this._isReversed = node.indices[node.indices.length - 1] === 0;
+      this._indices = point.indices.slice(0, point.indices.length - 1);
+      this._isReversed = point.indices[point.indices.length - 1] === 0;
       this._render();
       this._activateFinishNodes();
     }
@@ -286,15 +286,15 @@ export class PenTool extends AnyTool {
     this._isReversed = false;
     this._geometry = undefined;
     this._indices = [];
-    this.core.selectedNodes = [];
+    this.core.selectedPoints = [];
     this.core.render("features", this.core.features);
-    this.core.render("nodes", lib.createNodes(this.core.getSelectedFeatures()));
+    this.core.render("points", lib.createPoints(this.core.getSelectedFeatures()));
   }
 
   public refresh() {
-    this.core.selectedNodes = [];
+    this.core.selectedPoints = [];
     this.core.render("features", this.core.features);
-    this.core.render("nodes", lib.createNodes(this.core.getSelectedFeatures()));
+    this.core.render("points", lib.createPoints(this.core.getSelectedFeatures()));
 
     if (!this.core.selected.length && this._geometry) {
       this.core.selected = [this.core.features.length + 1];
@@ -330,9 +330,9 @@ export class PenTool extends AnyTool {
     this._resetDraw();
     this._activateStartingNodes(this.core.getSelectedFeatures());
 
-    this.core.addListener("mouseenter", "point", this._handlePointMouseEnter);
-    this.core.addListener("mousedown", "point", this._handlePointMouseDown);
-    this.core.addListener("click", "point", this._handlePointClick);
+    this.core.addListener("mouseenter", "points", this._handlePointMouseEnter);
+    this.core.addListener("mousedown", "points", this._handlePointMouseDown);
+    this.core.addListener("click", "points", this._handlePointClick);
     this.core.addListener("mousemove", this._handleCanvasMouseMove);
     this.core.addListener("click", this._handleCanvasClick);
     this.core.addListener("mouseout", this._handleCanvasLeave);
@@ -345,10 +345,10 @@ export class PenTool extends AnyTool {
     document.removeEventListener("keyup", this._handleModifyKey);
     this.core.removeListener("mouseout", this._handleCanvasLeave);
     this.core.removeListener("mousemove", this._handleCanvasMouseMove);
-    this.core.removeListener("mousedown", "point", this._handlePointMouseDown);
     this.core.removeListener("click", this._handleCanvasClick);
-    this.core.removeListener("mouseenter", "point", this._handlePointMouseEnter);
-    this.core.removeListener("click", "point", this._handlePointClick);
+    this.core.removeListener("mousedown", "points", this._handlePointMouseDown);
+    this.core.removeListener("mouseenter", "points", this._handlePointMouseEnter);
+    this.core.removeListener("click", "points", this._handlePointClick);
     this._resetCursor?.();
     if (this._storedSelected) {
       this.core.selected = this._storedSelected;

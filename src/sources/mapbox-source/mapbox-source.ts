@@ -1,16 +1,8 @@
-import {
-  GeoJSONSource,
-  Map,
-  MapEventType,
-  MapLayerEventType,
-  MapLayerMouseEvent,
-  MapLayerTouchEvent,
-  MapMouseEvent,
-} from "mapbox-gl";
-import { Feature as GeoJsonFeature, LineString, Point, Polygon } from "geojson";
-
+import "mapbox-gl";
+import * as geojson from "geojson";
+import * as lib from "../../lib";
 import { Source } from "../../controllers";
-import { Feature, LayerType, Node, SourceEventOptions, SourceMouseHandler } from "../../types";
+import { Feature, FeatureProps, LayerType, Point, SourceEventOptions, SourceEventHandler } from "../../types";
 import {
   addClickHandler,
   addMouseDownHandler,
@@ -30,46 +22,44 @@ import {
   Options,
   splitLayers,
 } from "./config";
+import mapboxgl from "mapbox-gl";
 
 type Subscription = {
   off: () => void;
   name: string;
-  callback: SourceMouseHandler;
+  callback: SourceEventHandler;
   layer?: string;
 };
 
-export type NodeGeoJSONProperties = Omit<Node, "position" | "indices"> & { position: string; indices: string } & Record<
-    string,
-    any
-  >;
+export type LayerFeatureProperties = { fid: string; indices: string } & Record<string, string>;
 
-export class MapboxSource extends Source<GeoJsonFeature> {
-  private _map: Map | undefined;
-  private _nodes: Record<string, string> = {};
+export class MapboxSource extends Source<geojson.Feature> {
+  private _map: mapboxgl.Map | undefined;
+  private _points: Record<string, string> = {};
   private readonly _options: Options | undefined;
   private _removeSources!: () => void;
   private _subscriptions: Subscription[] = [];
   private _onInit: (() => void) | undefined;
 
-  constructor(id: number | string, map: Map, options: Options);
-  constructor(id: number | string, map: Map);
-  constructor(map: Map, options: Options);
-  constructor(map: Map);
+  constructor(id: number | string, map: mapboxgl.Map, options: Options);
+  constructor(id: number | string, map: mapboxgl.Map);
+  constructor(map: mapboxgl.Map, options: Options);
+  constructor(map: mapboxgl.Map);
   constructor(...params: any[]) {
     const [id, map, options] =
       typeof params[0] === "number" || typeof params[0] === "string"
-        ? ([params[0], params[1], params[2]] as [number | string, Map, Options | undefined])
-        : ([undefined, params[0], params[1]] as [undefined, Map, Options | undefined]);
+        ? ([params[0], params[1], params[2]] as [number | string, mapboxgl.Map, Options | undefined])
+        : ([undefined, params[0], params[1]] as [undefined, mapboxgl.Map, Options | undefined]);
     super({
-      point: `@@map-editor-${id ?? ""}-point`,
-      line: `@@map-editor-${id ?? ""}-line`,
-      plane: `@@map-editor-${id ?? ""}-plane`,
+      points: `@@map-editor-${id ?? ""}-point`,
+      lines: `@@map-editor-${id ?? ""}-line`,
+      planes: `@@map-editor-${id ?? ""}-plane`,
     });
     this.addListener = this.addListener.bind(this);
     this.removeListener = this.removeListener.bind(this);
     this.setCursor = this.setCursor.bind(this);
     this.setFeatureState = this.setFeatureState.bind(this);
-    this.setNodeState = this.setNodeState.bind(this);
+    this.setPointState = this.setPointState.bind(this);
     this._options = options;
 
     const init = () => {
@@ -87,12 +77,12 @@ export class MapboxSource extends Source<GeoJsonFeature> {
 
     const sources: AddSourcePayload[] = [
       {
-        id: this.layerNames.plane,
+        id: this.layerNames.planes,
         layers: fillLayers,
         areaLayer: fillLayers.length ? areaFillLayer : undefined,
       },
       {
-        id: this.layerNames.line,
+        id: this.layerNames.lines,
         layers: lineLayers,
         areaLayer: {
           ...areaLineLayer,
@@ -103,7 +93,7 @@ export class MapboxSource extends Source<GeoJsonFeature> {
         },
       },
       {
-        id: this.layerNames.point,
+        id: this.layerNames.points,
         layers: pointLayers,
         areaLayer: {
           ...areaPointLayer,
@@ -142,12 +132,16 @@ export class MapboxSource extends Source<GeoJsonFeature> {
     }
   }
 
-  private _addMapListener(name: keyof MapEventType, callback: SourceMouseHandler, once = false) {
-    const handler = (e: MapMouseEvent) => {
+  private _addMapListener(
+    name: keyof mapboxgl.MapEventType,
+    callback: SourceEventHandler,
+    options: SourceEventOptions,
+  ) {
+    const handler = (e: mapboxgl.MapMouseEvent) => {
       callback(eventMapParser(e));
     };
 
-    if (once) {
+    if (options?.once) {
       this._map?.once(name, handler);
       return;
     }
@@ -164,7 +158,7 @@ export class MapboxSource extends Source<GeoJsonFeature> {
     this._addSubscription({ callback, name, off: () => this._map?.off(name, handler) });
   }
 
-  private _addLayerListener(name: keyof MapLayerEventType, layer: LayerType, callback: SourceMouseHandler) {
+  private _addLayerListener(name: keyof mapboxgl.MapLayerEventType, layer: LayerType, callback: SourceEventHandler) {
     if (name === "mouseleave" || name === "mouseover") {
       return this._addSubscription({
         callback,
@@ -192,7 +186,7 @@ export class MapboxSource extends Source<GeoJsonFeature> {
       });
     }
 
-    const handler = (e: MapLayerMouseEvent | MapLayerTouchEvent) => {
+    const handler = (e: mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent) => {
       callback(eventLayerParser(layer)(e));
     };
 
@@ -207,26 +201,29 @@ export class MapboxSource extends Source<GeoJsonFeature> {
 
   public addListener(
     ...params:
-      | [keyof MapEventType, SourceMouseHandler, SourceEventOptions]
-      | [keyof MapLayerEventType, LayerType, SourceMouseHandler]
+      | [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler]
+      | [keyof mapboxgl.MapEventType, SourceEventHandler]
+      | [keyof mapboxgl.MapEventType, SourceEventHandler, SourceEventOptions]
   ) {
     if (typeof params[1] === "function") {
-      const [name, callback, options] = params as [keyof MapEventType, SourceMouseHandler, SourceEventOptions];
-      this._addMapListener(name, callback, options?.once);
+      const [name, callback, options] = params as [keyof mapboxgl.MapEventType, SourceEventHandler, SourceEventOptions];
+      this._addMapListener(name, callback, options);
     } else {
-      const [name, layer, callback] = params as [keyof MapLayerEventType, LayerType, SourceMouseHandler];
+      const [name, layer, callback] = params as [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler];
       this._addLayerListener(name, layer, callback);
     }
   }
 
   public removeListener(
-    ...params: [keyof MapEventType, SourceMouseHandler] | [keyof MapLayerEventType, LayerType, SourceMouseHandler]
+    ...params:
+      | [keyof mapboxgl.MapEventType, SourceEventHandler]
+      | [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler]
   ) {
     if (typeof params[1] === "function") {
-      const [name, callback] = params as [keyof MapEventType, SourceMouseHandler];
+      const [name, callback] = params as [keyof mapboxgl.MapEventType, SourceEventHandler];
       this._removeSubscription({ name, callback });
     } else {
-      const [name, layer, callback] = params as [keyof MapLayerEventType, LayerType, SourceMouseHandler];
+      const [name, layer, callback] = params as [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler];
       this._removeSubscription({ name, layer, callback });
     }
   }
@@ -249,23 +246,24 @@ export class MapboxSource extends Source<GeoJsonFeature> {
 
   public setFeatureState(id: number | undefined, state: Record<string, boolean>) {
     if (!id) return;
-    this._map?.setFeatureState({ id, source: this.layerNames.line }, state);
-    this._map?.setFeatureState({ id, source: this.layerNames.plane }, state);
+    this._map?.setFeatureState({ id, source: this.layerNames.lines }, state);
+    this._map?.setFeatureState({ id, source: this.layerNames.planes }, state);
   }
 
-  public setNodeState({ indices, fid }: Node, state: Record<string, boolean>) {
+  public setPointState({ indices, fid }: Point, state: Record<string, boolean>) {
     if (!fid || !indices.length) return;
-    const globalId = this._nodes[`${fid}.${indices.join(".")}`];
-    globalId && this._map?.setFeatureState({ id: globalId, source: this.layerNames.point }, state);
+    const globalId = this._points[`${fid}.${indices.join(".")}`];
+    globalId && this._map?.setFeatureState({ id: globalId, source: this.layerNames.points }, state);
   }
 
   public renderFeatures(features: Feature[]) {
-    (this._map?.getSource(this.layerNames.plane) as GeoJSONSource)?.setData({
+    (this._map?.getSource(this.layerNames.planes) as mapboxgl.GeoJSONSource)?.setData({
       type: "FeatureCollection",
       features: features.reduce(
-        (acc, item) =>
-          item.type === "Polygon" || item.type === "MultiPolygon"
-            ? [
+        (acc, item) => {
+          switch (item.type) {
+            case "Polygon":
+              return [
                 ...acc,
                 {
                   id: item.id,
@@ -274,39 +272,73 @@ export class MapboxSource extends Source<GeoJsonFeature> {
                     type: item.type,
                     coordinates: item.coordinates,
                   },
-                  properties: item.props,
-                } as GeoJsonFeature,
-              ]
-            : acc,
-        [] as GeoJsonFeature[],
+                  properties: {
+                    ...item.props,
+                    indices: "[]",
+                    fid: item.id,
+                  },
+                } as geojson.Feature<geojson.Polygon>,
+              ];
+            case "MultiPolygon":
+              return item.coordinates.reduce((acc2, coords, index) => {
+                return [
+                  ...acc2,
+                  {
+                    id: item.id,
+                    type: "Feature",
+                    geometry: {
+                      type: "Polygon",
+                      coordinates: coords,
+                    },
+                    properties: {
+                      ...item.props,
+                      indices: JSON.stringify([index]),
+                      fid: item.id,
+                    },
+                  } as geojson.Feature<geojson.Polygon>,
+                ];
+              }, acc);
+            default:
+              return acc;
+          }
+        },
+
+        [] as geojson.Feature<geojson.Polygon>[],
       ),
     });
 
-    (this._map?.getSource(this.layerNames.line) as GeoJSONSource)?.setData({
+    (this._map?.getSource(this.layerNames.lines) as mapboxgl.GeoJSONSource)?.setData({
       type: "FeatureCollection",
-      features: features.map(
-        (item) =>
-          ({
+      features: features.reduce((acc, item) => {
+        let res: geojson.Feature<geojson.LineString>[] = [];
+        lib.traverseShape(item, (positions, indices) => {
+          res.push({
             id: item.id,
             type: "Feature",
             geometry: {
-              type: item.type,
-              coordinates: item.coordinates,
+              type: "LineString",
+              coordinates: positions,
             },
-            properties: item.props,
-          }) as GeoJsonFeature,
-      ),
+            properties: {
+              ...item.props,
+              fid: String(item.id),
+              indices: JSON.stringify(indices),
+            },
+          });
+        });
+        return [...acc, ...res];
+      }, [] as geojson.Feature<geojson.LineString>[]),
     });
   }
 
-  public renderNodes(nodes: Node[]) {
+  public renderPoints(points: Point<FeatureProps>[]) {
     let nextNodes: Record<string, string> = {};
 
-    const features = nodes.map((node, index) => {
+    const features = points.map((point, index) => {
       const globalId = String(index + 1);
       nextNodes = {
         ...nextNodes,
-        [`${node.fid}.${node.indices.join(".")}`]: globalId,
+        [`${point.fid}.${point.indices.join(".")}`]: globalId,
       };
 
       return {
@@ -314,28 +346,27 @@ export class MapboxSource extends Source<GeoJsonFeature> {
         type: "Feature",
         geometry: {
           type: "Point",
-          coordinates: node.position,
+          coordinates: point.coordinates,
         },
         properties: {
-          ...node.props,
-          fid: node.fid,
-          indices: JSON.stringify(node.indices),
-          position: JSON.stringify(node.position),
+          ...point.props,
+          fid: String(point.fid),
+          indices: JSON.stringify(point.indices),
         },
-      } as GeoJsonFeature<Point, NodeGeoJSONProperties>;
+      } as geojson.Feature<geojson.Point, LayerFeatureProperties>;
     });
 
-    Object.entries(this._nodes).forEach(([key, globalId]) => {
+    Object.entries(this._points).forEach(([key, globalId]) => {
       if (!nextNodes[key])
         this._map?.setFeatureState(
-          { id: globalId, source: this.layerNames.point },
+          { id: globalId, source: this.layerNames.points },
           { hovered: false, active: false, selected: false },
         );
     });
 
-    this._nodes = nextNodes;
+    this._points = nextNodes;
 
-    (this._map?.getSource(this.layerNames.point) as GeoJSONSource)?.setData({
+    (this._map?.getSource(this.layerNames.points) as mapboxgl.GeoJSONSource)?.setData({
       type: "FeatureCollection",
       features,
     });
@@ -354,7 +385,7 @@ export class MapboxSource extends Source<GeoJsonFeature> {
   }
 
   toFeatures(): Feature[] {
-    return (this.data as (GeoJsonFeature<LineString> | GeoJsonFeature<Polygon>)[]).map(
+    return (this.data as (geojson.Feature<geojson.LineString> | geojson.Feature<geojson.Polygon>)[]).map(
       (item, index) =>
         ({
           id: index + 1,
@@ -377,7 +408,7 @@ export class MapboxSource extends Source<GeoJsonFeature> {
               coordinates: features[index].coordinates,
             },
             properties: features[index].props,
-          }) as GeoJsonFeature<LineString> | GeoJsonFeature<Polygon>,
+          }) as geojson.Feature,
       ),
       ...(features.length > this.data.length
         ? [
@@ -390,7 +421,7 @@ export class MapboxSource extends Source<GeoJsonFeature> {
                     coordinates: feature.coordinates,
                   },
                   properties: feature.props,
-                }) as GeoJsonFeature<LineString> | GeoJsonFeature<Polygon>,
+                }) as geojson.Feature,
             ),
           ]
         : []),

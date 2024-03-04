@@ -1,73 +1,78 @@
-import { AnyLayer, Layer, Map, MapLayerMouseEvent, MapLayerTouchEvent, MapMouseEvent, Point } from "mapbox-gl";
-import { Feature, LayerType, Node, Position, SourceEvent, SourceMouseHandler } from "../../types";
-import { Feature as GeoJsonFeature, LineString, Polygon } from "geojson";
-import { NodeGeoJSONProperties } from "./mapbox-source";
+import * as geojson from "geojson";
+import "mapbox-gl";
+import { LayerType, Point, Position, SourceEvent, SourceEventHandler } from "../../types";
+import { LayerFeatureProperties } from "./mapbox-source";
 import { AddSourcePayload } from "./config";
 import * as lib from "../../lib";
+import mapboxgl from "mapbox-gl";
 
-const sortNodesByDistance = (nodes: Node[], position: Position) => {
-  return [...nodes].sort((a, b) =>
-    lib.math.distance(a.position, position) > lib.math.distance(b.position, position) ? 1 : -1,
+const sortPointsByDistance = (points: Point[], position: Position) => {
+  return [...points].sort((a, b) =>
+    lib.math.distance(a.coordinates, position) > lib.math.distance(b.coordinates, position) ? 1 : -1,
   );
 };
 
-export const eventMapParser = (e: MapMouseEvent): SourceEvent => ({
+export const eventMapParser = (e: mapboxgl.MapMouseEvent): SourceEvent => ({
   position: e.lngLat.toArray(),
   originalEvent: e.originalEvent,
-  features: [],
-  nodes: [],
+  points: [],
+  lines: [],
+  planes: [],
 });
 
-export const eventLayerParser =
-  (layer: LayerType) =>
-  (e: MapLayerMouseEvent | MapLayerTouchEvent): SourceEvent => {
+const renderElements = (
+  layer: LayerType,
+  features: mapboxgl.MapboxGeoJSONFeature[] | undefined,
+  position: Position,
+) => {
+  const elements = (features || []).map((item) => {
+    const { indices, fid } = item.properties as LayerFeatureProperties;
     return {
-      position: e.lngLat.toArray(),
-      originalEvent: e.originalEvent,
-      layer,
-      features:
-        layer !== "point"
-          ? (e.features || []).map(
-              (item) =>
-                ({
-                  id: item.id,
-                  type: item.geometry.type,
-                  coordinates: (item as GeoJsonFeature<LineString> | GeoJsonFeature<Polygon>).geometry.coordinates,
-                  props: item.properties,
-                }) as Feature,
-            )
-          : [],
-      nodes:
-        layer === "point"
-          ? sortNodesByDistance(
-              (e.features || []).map((item) => {
-                const { position, indices, fid, ...rest } = item.properties as NodeGeoJSONProperties;
-                return {
-                  fid,
-                  position: JSON.parse(position),
-                  indices: JSON.parse(indices),
-                  props: rest,
-                };
-              }),
-              e.lngLat.toArray(),
-            )
-          : [],
+      fid: +fid,
+      indices: JSON.parse(indices),
+      coordinates: (item.geometry as geojson.Point | geojson.LineString | geojson.Polygon).coordinates,
     };
-  };
+  });
+
+  switch (layer) {
+    case "points":
+      return {
+        points: sortPointsByDistance(elements as Point[], position) as Point[],
+        lines: [],
+        planes: [],
+      };
+    default: {
+      return {
+        points: [],
+        lines: [],
+        planes: [],
+        [layer]: elements,
+      };
+    }
+  }
+};
+
+export const eventLayerParser = (layer: LayerType) => (e: mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent) =>
+  ({
+    position: e.lngLat.toArray(),
+    originalEvent: e.originalEvent,
+    layer,
+    ...renderElements(layer, e.features, e.lngLat.toArray()),
+  }) as SourceEvent;
 
 export function addMouseLeaveHandler(
-  map: Map | undefined,
+  map: mapboxgl.Map | undefined,
   layer: LayerType,
   mapLayer: string,
-  callback: SourceMouseHandler,
+  callback: SourceEventHandler,
 ) {
-  let featurePoint: Point | undefined;
+  let featurePoint: mapboxgl.Point | undefined;
 
-  const handleMove = (ev: MapLayerTouchEvent | MapMouseEvent) => {
+  const handleMove = (ev: mapboxgl.MapLayerTouchEvent | mapboxgl.MapMouseEvent) => {
     featurePoint = ev.point;
   };
 
-  const handleMapMove = (ev: MapMouseEvent) => {
+  const handleMapMove = (ev: mapboxgl.MapMouseEvent) => {
     if (ev.point.x !== featurePoint?.x || ev.point.y !== featurePoint.y) {
       callback(eventLayerParser(layer)(ev));
     }
@@ -83,14 +88,14 @@ export function addMouseLeaveHandler(
 }
 
 export function addMouseDownHandler(
-  map: Map | undefined,
+  map: mapboxgl.Map | undefined,
   layer: LayerType,
   mapLayer: string,
-  callback: SourceMouseHandler,
+  callback: SourceEventHandler,
 ) {
   let isDragPan: boolean;
 
-  const handler = (e: MapLayerMouseEvent | MapLayerTouchEvent) => {
+  const handler = (e: mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent) => {
     isDragPan = Boolean(map?.dragPan.isEnabled());
     isDragPan && map?.dragPan.disable();
     callback(eventLayerParser(layer)(e));
@@ -105,14 +110,14 @@ export function addMouseDownHandler(
 }
 
 export function addClickHandler(
-  map: Map | undefined,
+  map: mapboxgl.Map | undefined,
   layer: LayerType | undefined,
   mapLayer: string | undefined,
-  callback: SourceMouseHandler,
+  callback: SourceEventHandler,
 ) {
   let isDblClickEnabled: boolean | undefined;
   let point: { x: number; y: number } | undefined;
-  const handleDown = (e: MapMouseEvent | MapLayerMouseEvent) => {
+  const handleDown = (e: mapboxgl.MapMouseEvent | mapboxgl.MapLayerMouseEvent) => {
     point = {
       x: e.originalEvent.pageX,
       y: e.originalEvent.pageY,
@@ -140,7 +145,7 @@ export function addClickHandler(
     }
   };
 
-  const handleUp = (e: MapMouseEvent | MapLayerMouseEvent | MapLayerTouchEvent) => {
+  const handleUp = (e: mapboxgl.MapMouseEvent | mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent) => {
     document.removeEventListener("mousemove", handleMove);
     if (mapLayer) {
       map?.off("mouseup", mapLayer, handleUp);
@@ -153,9 +158,9 @@ export function addClickHandler(
     });
 
     if (layer) {
-      callback(eventLayerParser(layer)(e as MapLayerTouchEvent | MapLayerMouseEvent));
+      callback(eventLayerParser(layer)(e as mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent));
     } else {
-      callback(eventMapParser(e as MapMouseEvent));
+      callback(eventMapParser(e as mapboxgl.MapMouseEvent));
     }
   };
 
@@ -181,7 +186,7 @@ export function addClickHandler(
   };
 }
 
-export const addSource = (map: Map | undefined, { id, layers, areaLayer }: AddSourcePayload) => {
+export const addSource = (map: mapboxgl.Map | undefined, { id, layers, areaLayer }: AddSourcePayload) => {
   if (!map) return;
   if (map.getSource(id)) removeSource(map, { id, layers, areaLayer });
   map.addSource(id, {
@@ -193,21 +198,21 @@ export const addSource = (map: Map | undefined, { id, layers, areaLayer }: AddSo
   });
 
   layers.forEach(
-    (layer: Omit<Layer, "id">, index: number) =>
+    (layer: Omit<mapboxgl.Layer, "id">, index: number) =>
       map?.addLayer({
         ...layer,
         id: `${id}-${index + 1}`,
         source: id,
-      } as AnyLayer & { id: string }),
+      } as mapboxgl.AnyLayer & { id: string }),
   );
-  areaLayer && map.addLayer({ ...areaLayer, source: id, id } as AnyLayer);
+  areaLayer && map.addLayer({ ...areaLayer, source: id, id } as mapboxgl.AnyLayer);
 };
 
-export const removeSource = (map: Map | undefined, { id, layers, areaLayer }: AddSourcePayload) => {
+export const removeSource = (map: mapboxgl.Map | undefined, { id, layers, areaLayer }: AddSourcePayload) => {
   if (!map) return;
   areaLayer && map.getLayer(id) && map.removeLayer(id);
   layers.forEach(
-    (layer: Omit<Layer, "id">, index: number) =>
+    (layer: Omit<mapboxgl.Layer, "id">, index: number) =>
       map?.getLayer(`${id}-${index + 1}`) && map?.removeLayer(`${id}-${index + 1}`),
   );
   map.getSource(id) && map.removeSource(id);

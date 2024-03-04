@@ -1,23 +1,24 @@
-import { Feature, LayerType, Node, SourceMouseHandler, SourceEventOptions } from "../types";
+import { Feature, LayerType, Point, SourceEventOptions, FeatureProps, SourceEventHandler } from "../types";
 
-type RenderListenerParams =
-  | [string, LayerType, SourceMouseHandler]
-  | [string, SourceMouseHandler, SourceEventOptions]
-  | [string, SourceMouseHandler];
+type AddListenerParams =
+  | [string, SourceEventHandler]
+  | [string, SourceEventHandler, SourceEventOptions | undefined]
+  | [string, LayerType, SourceEventHandler];
+type RemoveListenerParams = [string, SourceEventHandler] | [string, LayerType, SourceEventHandler];
 
 export abstract class Source<T = object> {
   private _data: T[] = [];
   private _features: Feature[] = [];
   private _onChange!: (() => void) | undefined;
   readonly layerNames: Record<LayerType, string>;
-  abstract addListener(...params: RenderListenerParams): void;
-  abstract removeListener(...params: RenderListenerParams): void;
+  abstract addListener(...params: AddListenerParams): void;
+  abstract removeListener(...params: RemoveListenerParams): void;
   abstract setCursor(value: string): (() => void) | undefined;
   abstract setFeatureState(id: number | undefined, state: Record<string, boolean>): void;
-  abstract setNodeState(node: Pick<Node, "indices" | "fid">, state: Record<string, boolean>): void;
+  abstract setPointState(node: Pick<Point, "indices" | "fid">, state: Record<string, boolean>): void;
   abstract remove(): void;
   abstract renderFeatures(features: Feature[]): void;
-  abstract renderNodes(nodes: Node[]): void;
+  abstract renderPoints(nodes: Point<FeatureProps>[]): void;
   abstract get renderer(): any;
   abstract onInit(callback?: () => void): void;
   abstract toFeatures(): Feature[];

@@ -1,6 +1,6 @@
-import { Feature, Polygon, Position, Node, LineString, MultiLineString, MultiPolygon } from "./types";
+import { Feature, Polygon, Position, Point, LineString, MultiLineString, MultiPolygon, FeatureProps } from "./types";
 
-const getShape = (feature: Feature | undefined, indices: number[]): Position[] => {
+const getPositions = (feature: Feature | undefined, indices: number[]): Position[] => {
   if (!feature) return [];
   switch (feature.type) {
     case "LineString":
@@ -17,7 +17,7 @@ const getShape = (feature: Feature | undefined, indices: number[]): Position[] =
   }
 };
 
-const traverseShapes = (feature: Feature | undefined, callback: (positions: Position[], indices: number[]) => void) => {
+const traverseShape = (feature: Feature | undefined, callback: (positions: Position[], indices: number[]) => void) => {
   if (!feature) return [];
   switch (feature.type) {
     case "LineString":
@@ -73,14 +73,14 @@ const updateShape = (
   }
 };
 
-const createPlaceholderNodes = (features: Feature[]): Node[] => {
+const createMiddlePoints = (features: Feature[]): Point<FeatureProps>[] => {
   return features.reduce((acc, feature) => {
-    traverseShapes(feature, (positions, indices) => {
-      const startIndex = openShape(positions, feature.type).length;
+    traverseShape(feature, (positions, indices) => {
+      const startIndex = toPoints(positions, feature.type).length;
       positions.slice(1).forEach((position, index) => {
         acc.push({
           fid: feature.id,
-          position: math.normalize(math.average(position, positions[index])),
+          coordinates: math.normalize(math.average(position, positions[index])),
           indices: [...indices, startIndex + index],
           props: feature.props,
         });
@@ -88,16 +88,16 @@ const createPlaceholderNodes = (features: Feature[]): Node[] => {
     });
 
     return acc;
-  }, [] as Node[]);
+  }, [] as Point<FeatureProps>[]);
 };
 
-const createNodes = (features: Feature[]): Node[] => {
+const createPoints = (features: Feature[]): Point<FeatureProps>[] => {
   return features.reduce((acc, feature) => {
-    traverseShapes(feature, (positions, indices) => {
-      openShape(positions, feature.type).forEach((position, index) => {
+    traverseShape(feature, (positions, indices) => {
+      toPoints(positions, feature.type).forEach((position, index) => {
         acc.push({
           fid: feature.id,
-          position,
+          coordinates: position,
           indices: [...indices, index],
           props: feature.props,
         });
@@ -105,7 +105,7 @@ const createNodes = (features: Feature[]): Node[] => {
     });
 
     return acc;
-  }, [] as Node[]);
+  }, [] as Point<FeatureProps>[]);
 };
 
 const moveFeatures = (features: Feature[], ids: number[], start: Position, end: Position) => {
@@ -134,7 +134,7 @@ const moveFeatures = (features: Feature[], ids: number[], start: Position, end: 
   });
 };
 
-const closeShape = (positions: Position[], type?: Feature["type"]) => {
+const toCoordinates = (positions: Position[], type?: Feature["type"]) => {
   switch (type) {
     case "Polygon":
     case "MultiPolygon":
@@ -143,7 +143,8 @@ const closeShape = (positions: Position[], type?: Feature["type"]) => {
       return positions;
   }
 };
-const openShape = (positions: Position[], type?: Feature["type"]) => {
+
+const toPoints = (positions: Position[], type?: Feature["type"]) => {
   switch (type) {
     case "Polygon":
     case "MultiPolygon":
@@ -151,6 +152,10 @@ const openShape = (positions: Position[], type?: Feature["type"]) => {
     default:
       return positions;
   }
+};
+
+const isPolygonLike = (feature: Feature) => {
+  return feature.type === "Polygon" || feature.type === "MultiPolygon";
 };
 
 const math = {
@@ -187,23 +192,24 @@ const isArrayEqual = (a: number[], b: number[]) => {
   return !a.some((x, i) => x !== b[i]);
 };
 
-const compareNodes = <T extends Omit<Node, "position">>(prev: T[], next: T[]): [T[], T[]] => {
+const comparePoints = <T extends Omit<Point, "coordinates">>(prev: T[], next: T[]): [T[], T[]] => {
   return [
-    prev.filter((item) => !next.some((node) => node.fid === item.fid && isArrayEqual(node.indices, item.indices))),
-    next.filter((item) => !prev.some((node) => node.fid === item.fid && isArrayEqual(node.indices, item.indices))),
+    prev.filter((item) => !next.some((point) => point.fid === item.fid && isArrayEqual(point.indices, item.indices))),
+    next.filter((item) => !prev.some((point) => point.fid === item.fid && isArrayEqual(point.indices, item.indices))),
   ];
 };
 
 export {
   isArrayEqual,
-  compareNodes,
-  createNodes,
-  createPlaceholderNodes,
-  getShape,
+  isPolygonLike,
+  comparePoints,
+  createPoints,
+  createMiddlePoints,
+  getPositions,
   updateShape,
-  openShape,
-  closeShape,
-  traverseShapes,
+  toPoints,
+  toCoordinates,
+  traverseShape,
   moveFeatures,
   math,
 };
