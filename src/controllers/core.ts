@@ -2,7 +2,7 @@ import { Source } from "./source";
 import { Feature, Point } from "../types";
 import { StateManager } from "./state-manager";
 import * as lib from "../lib";
-import geojson from "geojson";
+import * as geojson from "geojson";
 
 export class Core {
   private _source: Source;

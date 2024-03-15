@@ -1,4 +1,4 @@
-import geojson from "geojson";
+import * as geojson from "geojson";
 import { Feature, LayerType, Point, SourceEventOptions, SourceEventHandler, LayerState } from "../types";
 
 type AddListenerParams =

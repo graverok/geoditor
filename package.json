@@ -1,32 +1,34 @@
 {
-  "name": "geomeditor",
+  "name": "geoditor",
   "version": "0.1.0",
   "author": {
     "name": "Aleksandr Gurianov",
     "url": "http://golova.pro"
   },
-  "homepage": "https://github.com/graverok/geomeditor#readme",
+  "homepage": "https://github.com/graverok/geoditor#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/graverok/geomeditor"
+    "url": "https://github.com/graverok/geoditor"
   },
   "bugs": {
-    "url": "https://github.com/graverok/geomeditor/issues"
+    "url": "https://github.com/graverok/geoditor/issues"
   },
   "license": "MIT",
-  "main": "dist/geomeditor.cjs.js",
-  "module": "dist/geomeditor.esm.js",
-  "browser": "dist/geomeditor.umd.js",
-  "types": "dist/types/main.d.ts",
+  "main": "dist/geoditor.cjs.js",
+  "module": "dist/geoditor.esm.js",
+  "browser": "dist/geoditor.umd.js",
+  "types": "dist/types.d.ts",
   "keywords": [
     "mapbox",
     "editor",
-    "geometry"
+    "geometry",
+    "geojson"
   ],
   "devDependencies": {
     "@babel/core": "^7.2.2",
     "@babel/preset-env": "^7.2.3",
     "@babel/preset-typescript": "^7.23.3",
+    "@rollup/plugin-typescript": "^11.1.6",
     "@types/geojson": "^7946.0.14",
     "@types/jest": "^29.5.12",
     "@types/mapbox-gl": "^2.7.19",

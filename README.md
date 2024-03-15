@@ -1,3 +1,3 @@
-# Geomeditor
-TODO: Customizable geometry editor for maps
+# Geoditor
+Powerful GeoJSON editor
 

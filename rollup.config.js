@@ -3,13 +3,14 @@ import commonjs from "rollup-plugin-commonjs";
 import babel from "rollup-plugin-babel";
 import typescript from "rollup-plugin-typescript";
 import { uglify } from "rollup-plugin-uglify";
+import { dts } from "rollup-plugin-dts";
 import pkg from "./package.json";
 
 export default [
   {
     input: "src/main.ts",
     output: {
-      name: "geomeditor",
+      name: "geoditor",
       file: pkg.browser,
       format: "umd",
     },
@@ -20,7 +21,7 @@ export default [
         exclude: ["node_modules/**"],
       }),
       typescript(),
-      // uglify(),
+      uglify(),
     ],
   },
   {
@@ -37,9 +38,9 @@ export default [
       uglify(),
     ],
   },
-  // {
-  //   input: "src/types.ts",
-  //   output: [{ file: "dist/geometry-editor.d.ts", format: "es" }],
-  //   plugins: [dts()],
-  // },
+  {
+    input: "src/main.ts",
+    output: [{ file: "dist/types.d.ts", format: "es" }],
+    plugins: [dts()],
+  },
 ];

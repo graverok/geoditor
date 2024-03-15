@@ -8,7 +8,7 @@ const defaultTools = {
   edit: EditTool,
 };
 
-export class Geomeditor {
+export class Geoditor {
   private _tools: AnyTool[] = [];
   private _tool: AnyTool | undefined;
   private readonly _core: Core;
