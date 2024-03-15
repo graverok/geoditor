@@ -1,67 +1,41 @@
-import * as geojson from "geojson";
-import "mapbox-gl";
-import { LayerType, Point, Position, SourceEvent, SourceEventHandler } from "../../types";
-import { LayerFeatureProperties } from "./mapbox-source";
+import mapboxgl from "mapbox-gl";
+import geojson from "geojson";
+import { LayerType, Position, SourceEvent, SourceEventHandler } from "../../types";
 import { AddSourcePayload } from "./config";
 import * as lib from "../../lib";
-import mapboxgl from "mapbox-gl";
+import { LayerFeatureProperties, ShapesCollection } from "./types";
 
-const sortPointsByDistance = (points: Point[], position: Position) => {
+export const sortPointsByDistance = (
+  points: geojson.Feature<geojson.Point, LayerFeatureProperties>[],
+  position: Position,
+) => {
   return [...points].sort((a, b) =>
-    lib.math.distance(a.coordinates, position) > lib.math.distance(b.coordinates, position) ? 1 : -1,
+    lib.math.distance(a.geometry.coordinates, position) >= lib.math.distance(b.geometry.coordinates, position) ? 1 : -1,
   );
 };
 
-export const eventMapParser = (e: mapboxgl.MapMouseEvent): SourceEvent => ({
+export const eventMapParser = (e: mapboxgl.MapMouseEvent, collection: ShapesCollection): SourceEvent => ({
   position: e.lngLat.toArray(),
   originalEvent: e.originalEvent,
-  points: [],
-  lines: [],
-  planes: [],
+  points: [...(collection.points ?? [])],
+  lines: [...(collection.lines ?? [])],
+  planes: [...(collection.planes ?? [])],
 });
 
-const renderElements = (
-  layer: LayerType,
-  features: mapboxgl.MapboxGeoJSONFeature[] | undefined,
-  position: Position,
-) => {
-  const elements = (features || []).map((item) => {
-    const { indices, fid } = item.properties as LayerFeatureProperties;
-    return {
-      fid: +fid,
-      indices: JSON.parse(indices),
-      coordinates: (item.geometry as geojson.Point | geojson.LineString | geojson.Polygon).coordinates,
-    };
-  });
-
-  switch (layer) {
-    case "points":
-      return {
-        points: sortPointsByDistance(elements as Point[], position) as Point[],
-        lines: [],
-        planes: [],
-      };
-    default: {
-      return {
-        points: [],
-        lines: [],
-        planes: [],
-        [layer]: elements,
-      };
-    }
-  }
-};
-
-export const eventLayerParser = (layer: LayerType) => (e: mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent) =>
-  ({
-    position: e.lngLat.toArray(),
-    originalEvent: e.originalEvent,
-    layer,
-    ...renderElements(layer, e.features, e.lngLat.toArray()),
-  }) as SourceEvent;
+export const eventLayerParser =
+  (layer: LayerType) => (e: mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent, collection: ShapesCollection) =>
+    ({
+      position: e.lngLat.toArray(),
+      originalEvent: e.originalEvent,
+      layer,
+      points: [...(collection.points ?? [])],
+      lines: [...(collection.lines ?? [])],
+      planes: [...(collection.planes ?? [])],
+    }) as SourceEvent;
 
 export function addMouseLeaveHandler(
   map: mapboxgl.Map | undefined,
+  collection: ShapesCollection,
   layer: LayerType,
   mapLayer: string,
   callback: SourceEventHandler,
@@ -74,7 +48,7 @@ export function addMouseLeaveHandler(
 
   const handleMapMove = (ev: mapboxgl.MapMouseEvent) => {
     if (ev.point.x !== featurePoint?.x || ev.point.y !== featurePoint.y) {
-      callback(eventLayerParser(layer)(ev));
+      callback(eventLayerParser(layer)(ev, collection));
     }
   };
 
@@ -89,17 +63,28 @@ export function addMouseLeaveHandler(
 
 export function addMouseDownHandler(
   map: mapboxgl.Map | undefined,
+  collection: ShapesCollection,
   layer: LayerType,
   mapLayer: string,
   callback: SourceEventHandler,
 ) {
   let isDragPan: boolean;
+  let isBoxZoom: boolean;
 
   const handler = (e: mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent) => {
     isDragPan = Boolean(map?.dragPan.isEnabled());
     isDragPan && map?.dragPan.disable();
-    callback(eventLayerParser(layer)(e));
-    document.addEventListener("mouseup", () => isDragPan && map?.dragPan.enable(), { once: true });
+    isBoxZoom = Boolean(map?.boxZoom.isEnabled());
+    isBoxZoom && map?.boxZoom.disable();
+    callback(eventLayerParser(layer)(e, collection));
+    document.addEventListener(
+      "mouseup",
+      () => {
+        isDragPan && map?.dragPan.enable();
+        isBoxZoom && map?.boxZoom.enable();
+      },
+      { once: true },
+    );
   };
 
   map?.on("mousedown", mapLayer, handler);
@@ -111,6 +96,7 @@ export function addMouseDownHandler(
 
 export function addClickHandler(
   map: mapboxgl.Map | undefined,
+  collection: ShapesCollection,
   layer: LayerType | undefined,
   mapLayer: string | undefined,
   callback: SourceEventHandler,
@@ -158,9 +144,9 @@ export function addClickHandler(
     });
 
     if (layer) {
-      callback(eventLayerParser(layer)(e as mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent));
+      callback(eventLayerParser(layer)(e as mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent, collection));
     } else {
-      callback(eventMapParser(e as mapboxgl.MapMouseEvent));
+      callback(eventMapParser(e as mapboxgl.MapMouseEvent, collection));
     }
   };
 

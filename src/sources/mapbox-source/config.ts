@@ -1,48 +1,53 @@
-import { AnyLayout, AnyPaint, Layer } from "mapbox-gl";
+import mapboxgl from "mapbox-gl";
+import { LayerType } from "../../types";
 
 export type AddSourcePayload = {
   id: string;
-  layers: Omit<Layer, "id">[];
-  areaLayer?: Omit<Layer, "id">;
+  layers: Omit<mapboxgl.Layer, "id">[];
+  areaLayer?: Omit<mapboxgl.Layer, "id">;
 };
 
 type ConfigParams<T> = { default: { [key in keyof T]: T[key] } } & Partial<
-  Record<"disabled" | "hovered" | "selected" | "active", { [key in keyof T]: T[key] }>
+  Record<"disabled" | "active" | "hover", { [key in keyof T]: T[key] }>
 >;
 
-type LayerConfig = { type: Layer["type"]; paint: ConfigParams<AnyPaint>; layout?: AnyLayout };
+type LayerConfig = {
+  type: mapboxgl.Layer["type"];
+  paint: ConfigParams<mapboxgl.AnyPaint>;
+  layout?: mapboxgl.AnyLayout;
+};
 
 export type Options = {
   config?: LayerConfig[];
-  layerStyles?: Omit<Layer, "id">[];
-  pointArea?: number;
-  lineArea?: number;
+  layerStyles?: Omit<mapboxgl.Layer, "id">[];
+  area?: {
+    points?: number;
+    lines?: number;
+    planes?: undefined;
+  };
 };
 
-export const areaPointLayer = {
-  type: "circle",
-  paint: {
-    "circle-radius": 8,
-    "circle-color": "#FF0000",
-    "circle-opacity": 0,
-  },
-};
-
-export const areaLineLayer = {
-  type: "line",
-  paint: {
-    "line-width": 10,
-    "line-color": "#0000FF",
-    "line-opacity": 0,
-  },
-};
-
-export const areaFillLayer = {
-  type: "fill",
-  paint: {
-    "fill-color": "#00FF00",
-    "fill-opacity": 0,
-  },
+export const areaLayer = {
+  points: (width = 14) => ({
+    type: "circle",
+    paint: {
+      "circle-radius": width / 2,
+      "circle-opacity": 0,
+    },
+  }),
+  lines: (width = 10) => ({
+    type: "line",
+    paint: {
+      "line-width": width,
+      "line-opacity": 0,
+    },
+  }),
+  planes: () => ({
+    type: "fill",
+    paint: {
+      "fill-opacity": 0,
+    },
+  }),
 };
 
 export const defaultConfig: LayerConfig[] = [
@@ -51,13 +56,13 @@ export const defaultConfig: LayerConfig[] = [
     paint: {
       default: {
         "fill-color": ["get", "color"],
-        "fill-opacity": 0.08,
+        "fill-opacity": 0.12,
       },
-      selected: {
-        "fill-opacity": 0.15,
+      disabled: {
+        "fill-opacity": 0.03,
       },
-      hovered: {
-        "fill-opacity": 0.15,
+      hover: {
+        "fill-opacity": 0.16,
       },
       active: {
         "fill-opacity": 0.2,
@@ -68,20 +73,20 @@ export const defaultConfig: LayerConfig[] = [
     type: "line",
     paint: {
       default: {
-        "line-width": 1.5,
+        "line-width": 1.6,
         "line-color": ["get", "color"],
         "line-opacity": 0.7,
       },
-      selected: {
+      disabled: {
+        "line-width": 1,
+        "line-opacity": 0.4,
+      },
+      hover: {
         "line-width": 2,
         "line-opacity": 1,
       },
-      hovered: {
-        "line-width": 2.3,
-        "line-opacity": 1,
-      },
       active: {
-        "line-width": 2.2,
+        "line-width": 2,
         "line-opacity": 1,
       },
     },
@@ -94,22 +99,20 @@ export const defaultConfig: LayerConfig[] = [
     type: "circle",
     paint: {
       default: {
+        "circle-stroke-color": ["get", "color"],
+        "circle-color": "#FFFFFF",
         "circle-radius": 2,
-        "circle-stroke-width": 0.5,
+        "circle-stroke-width": 1.5,
+      },
+      disabled: {
+        "circle-radius": 1.5,
+        "circle-stroke-width": 1,
         "circle-color": ["get", "color"],
-        "circle-stroke-color": ["get", "color"],
       },
-      selected: {
-        "circle-stroke-color": ["get", "color"],
-        "circle-color": "#FFFFFF",
-        "circle-radius": 2,
-        "circle-stroke-width": 1.5,
-      },
-      hovered: {
+      hover: {
         "circle-radius": 2.6,
-        "circle-stroke-width": 1.5,
-        "circle-stroke-color": ["get", "color"],
         "circle-color": "#FFFFFF",
+        "circle-stroke-width": 1.7,
       },
       active: {
         "circle-stroke-color": "#FFFFFF",
@@ -119,64 +122,60 @@ export const defaultConfig: LayerConfig[] = [
   },
 ];
 
-export const generateLayers = (config: LayerConfig[]): Omit<Layer, "id">[] => {
+export const generateLayers = (config: LayerConfig[]): Omit<mapboxgl.Layer, "id">[] => {
   return config.map((item) => {
     const paintKeys = Object.keys(item.paint.default);
 
     return {
       type: item.type as any,
-      paint: (paintKeys as (keyof AnyPaint)[]).reduce(
-        (acc: AnyPaint | AnyLayout, key: keyof (AnyPaint | AnyLayout)): AnyPaint | AnyLayout => {
+      paint: (paintKeys as (keyof mapboxgl.AnyPaint)[]).reduce(
+        (
+          acc: mapboxgl.AnyPaint | mapboxgl.AnyLayout,
+          key: keyof (mapboxgl.AnyPaint | mapboxgl.AnyLayout),
+        ): mapboxgl.AnyPaint | mapboxgl.AnyLayout => {
           return {
             ...acc,
             [key]: [
               "case",
-              [
-                "all",
-                ["boolean", ["feature-state", "hovered"], false],
-                ["boolean", ["feature-state", "active"], false],
-              ],
-              item.paint.active?.[key] ||
-                item.paint.hovered?.[key] ||
-                item.paint.selected?.[key] ||
-                item.paint.default[key],
+              ["all", ["boolean", ["feature-state", "hover"], false], ["boolean", ["feature-state", "active"], false]],
+              item.paint.active?.[key] || item.paint.hover?.[key] || item.paint.default[key],
               ["boolean", ["feature-state", "active"], false],
-              item.paint.active?.[key] || item.paint.selected?.[key] || item.paint.default[key],
+              item.paint.active?.[key] || item.paint.default[key],
               [
                 "all",
-                ["boolean", ["feature-state", "hovered"], false],
-                ["boolean", ["feature-state", "selected"], false],
+                ["boolean", ["feature-state", "hover"], false],
+                ["boolean", ["feature-state", "disabled"], false],
               ],
-              item.paint.hovered?.[key] || item.paint.selected?.[key] || item.paint.default[key],
-              ["boolean", ["feature-state", "hovered"], false],
-              item.paint.hovered?.[key] || item.paint.default[key],
-              ["boolean", ["feature-state", "selected"], false],
-              item.paint.selected?.[key] || item.paint.default[key],
+              item.paint.default[key],
+              ["boolean", ["feature-state", "hover"], false],
+              item.paint.hover?.[key] || item.paint.default[key],
+              ["boolean", ["feature-state", "disabled"], false],
+              item.paint.disabled?.[key] || item.paint.default[key],
               item.paint.default[key],
             ],
           };
         },
-        {} as AnyPaint,
+        {} as mapboxgl.AnyPaint,
       ),
       ...(item.layout ? { layout: item.layout } : {}),
-    } as Omit<Layer, "id">;
+    } as Omit<mapboxgl.Layer, "id">;
   });
 };
 
-export const splitLayers = (layers: Omit<Layer, "id">[]) =>
+export const splitLayers = (layers: Omit<mapboxgl.Layer, "id">[]): Record<LayerType, Omit<mapboxgl.Layer, "id">[]> =>
   layers.reduce(
     (acc, layer) => {
       switch (layer.type) {
         case "line":
-          acc[1].push(layer);
+          acc.lines.push(layer);
           break;
         case "fill":
-          acc[2].push(layer);
+          acc.planes.push(layer);
           break;
         default:
-          acc[0].push(layer);
+          acc.points.push(layer);
       }
       return acc;
     },
-    [[], [], []] as Omit<Layer, "id">[][],
+    { points: [], lines: [], planes: [] } as Record<LayerType, Omit<mapboxgl.Layer, "id">[]>,
   );

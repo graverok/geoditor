@@ -22,32 +22,32 @@ export type MultiPolygon = {
 
 export type DrawType = "LineString" | "Polygon";
 export type LayerType = "points" | "lines" | "planes";
+export type LayerState = "disabled" | "hover" | "active";
 export type FeatureProps = {
   color?: string;
 } & Record<string, any>;
 
 export type Feature<T = LineString | Polygon | MultiLineString | MultiPolygon, P = FeatureProps> = T & {
-  id: number;
+  nesting: number[];
   props?: P;
 };
 
-export type Point<P = undefined> = {
-  fid: number;
-  indices: number[];
+export type Point = {
+  nesting: number[];
   coordinates: Position;
-  props?: P;
+  props?: FeatureProps;
 };
 
 export type Line = {
-  fid: number;
-  indices: number[];
+  nesting: number[];
   coordinates: Position[];
+  props?: FeatureProps;
 };
 
 export type Plane = {
-  fid: number;
-  indices: number[];
+  nesting: number[];
   coordinates: Position[][];
+  props?: FeatureProps;
 };
 
 export interface SourceEvent<O extends MouseEvent | TouchEvent = MouseEvent> {

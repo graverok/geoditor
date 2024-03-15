@@ -1,187 +1,121 @@
 import { Source } from "./source";
-import { LayerType, Feature, Point, FeatureProps, SourceEvent } from "../types";
+import { Feature, Point } from "../types";
+import { StateManager } from "./state-manager";
 import * as lib from "../lib";
+import geojson from "geojson";
 
 export class Core {
   private _source: Source;
-  private _selected: number[] = [];
-  private _shapes: number[] = [];
-  private _selectedPoints: Pick<Point, "indices" | "fid">[] = [];
-  private _hovered: Partial<Record<LayerType, number | undefined>> | undefined;
   public addListener;
   public removeListener;
-  public setState;
   public setCursor;
+  public state: {
+    features: StateManager;
+    points: StateManager;
+  };
+  public render: (type: "features" | "points", items: Feature[] | Point[]) => void;
   private readonly _onSelect!: (() => void) | undefined;
+  private readonly _onChange!: (() => void) | undefined;
 
-  constructor(props: { source: Source; onSelect?: () => void }) {
+  constructor(props: { source: Source; onSelect?: () => void; onChange?: () => void }) {
     this._source = props.source;
     this._onSelect = props.onSelect;
-    this._handleGeometryEnter = this._handleGeometryEnter.bind(this);
+    this._onChange = props.onChange;
     this.addListener = this._source.addListener;
     this.removeListener = this._source.removeListener;
-    this.setState = this._source.setState;
     this.setCursor = this._source.setCursor;
+    this.render = this._source.render;
+
+    this.state = {
+      features: new StateManager((key, add, remove) => {
+        if (remove.length) {
+          this._source.setState("lines", remove, key, false);
+          this._source.setState("planes", remove, key, false);
+        }
+        if (add.length) {
+          this._source.setState("lines", add, key, true);
+          this._source.setState("planes", add, key, true);
+        }
+        key === "active" && this._onSelect?.();
+      }),
+      points: new StateManager((key, add, remove) => {
+        remove.length && this._source.setState("points", remove, key, false);
+        add.length && this._source.setState("points", add, key, true);
+      }),
+    };
   }
 
-  public getFeature(id?: number) {
-    return this._source.getFeature(id);
+  public getFeature(index?: number) {
+    if (typeof index !== "number") return;
+    return this.features[index];
   }
 
   public init() {
-    this._addHandlers();
     this.render("features", this.features);
   }
 
   public reset() {
-    this.selectedPoints = [];
-    this.selected = [];
-    this.shapes = [];
-    this._hovered = undefined;
+    this.state.features.set("active", []);
     this.render("features", this.features);
     this.render("points", []);
   }
 
-  get hovered() {
-    return this._hovered;
-  }
-
-  private _setHovered(type: LayerType, id?: number) {
-    this._hovered = {
-      ...this._hovered,
-      [type]: id,
-    };
-
-    if (!Object.values(this._hovered).some((v) => v)) {
-      this._hovered = undefined;
-    }
-  }
-
-  set selected(ids: number[]) {
-    if (ids.length === this._selected.length && !ids.some((n) => !this._selected.includes(n))) return;
-
-    this._selected.forEach((id) => {
-      if (ids.includes(id)) return;
-      this.setState({ selected: false }, "lines", id);
-      this.setState({ selected: false }, "planes", id);
-    });
-    ids.forEach((id) => {
-      if (this._selected.includes(id)) return;
-      this.setState({ selected: true }, "lines", id);
-      this.setState({ selected: true }, "planes", id);
-    });
-
-    this._selected = Array.from(ids);
-    this._onSelect?.();
-  }
-
-  get selected() {
-    return this._selected;
-  }
-
-  set shapes(indices: number[]) {
-    this._shapes = indices;
-  }
-
-  get shapes() {
-    return this._shapes;
-  }
-
-  set selectedPoints(nodes: Pick<Point, "fid" | "indices">[]) {
-    const [toRemove, toAdd] = lib.comparePoints(this._selectedPoints, nodes);
-    toAdd.forEach((node) => this._source.setState({ selected: true }, "points", node.fid, node.indices));
-    toRemove.forEach((node) => this._source.setState({ selected: false }, "points", node.fid, node.indices));
-    this._selectedPoints = nodes;
-  }
-
-  get selectedPoints() {
-    return this._selectedPoints;
-  }
-
-  public isPointSelected(node: Point) {
-    return this._selectedPoints.some((item) => item.fid === node.fid && lib.isArrayEqual(node.indices, item.indices));
-  }
-
-  private _handleGeometryEnter(e: SourceEvent) {
-    const layer = e.layer;
-    if (!layer) return;
-    let ids = e[layer].map((i) => i.fid) ?? [];
-    this._setHovered(
-      layer,
-      ids.find((id) => this._selected.includes(id)) ||
-        ids.find((id) => [this._hovered?.points, this._hovered?.lines, this.hovered?.planes].includes(id)) ||
-        ids[0],
+  public isolateFeatures() {
+    this.state.features.set(
+      "disabled",
+      this.state.features.get("active").length && !this.state.features.get("active").some((n) => typeof n === "number")
+        ? this.features.reduce(
+            (acc, f) => {
+              if (this.state.features.get("active").map(lib.array.unarray).includes(f.nesting[0])) return acc;
+              return [...acc, f.nesting[0]];
+            },
+            [] as (number | number[])[],
+          )
+        : [],
     );
-
-    const handleMouseMove = (ev: SourceEvent) => {
-      ids = ev[layer].map((i) => i.fid) ?? [];
-      this._setHovered(
-        layer,
-        ids.find((id) => this._selected.includes(id)) ||
-          ids.find((id) => [this._hovered?.points, this._hovered?.lines, this.hovered?.planes].includes(id)) ||
-          ids[0],
-      );
-    };
-
-    const handleMouseLeave = () => {
-      this._setHovered(layer);
-
-      this._source.removeListener("mousemove", layer, handleMouseMove);
-      this._source.removeListener("mouseleave", layer, handleMouseLeave);
-    };
-
-    this._source.addListener("mousemove", layer, handleMouseMove);
-    this._source.addListener("mouseleave", layer, handleMouseLeave);
   }
 
   get features() {
-    return this._source.features;
+    return (this._source.data as geojson.Feature[]).map(
+      (item, index) =>
+        ({
+          nesting: [index],
+          type: item.geometry.type,
+          coordinates: item.geometry.type !== "GeometryCollection" ? item.geometry.coordinates : [],
+          props: item.properties,
+        }) as Feature,
+    );
   }
 
   set features(features: Feature[]) {
-    this._source.features = features;
-  }
-
-  public getSelectedFeatures() {
-    return this._source.features.filter((item) => this._selected.includes(item.id));
+    this._source.data = features.map((item) =>
+      this._source.data[item.nesting[0]]
+        ? ({
+            ...this._source.data[item.nesting[0]],
+            geometry: {
+              type: item.type,
+              coordinates: item.coordinates,
+            },
+          } as geojson.Feature)
+        : ({
+            type: "Feature",
+            geometry: {
+              type: item.type,
+              coordinates: item.coordinates,
+            },
+            properties: item.props,
+          } as geojson.Feature),
+    );
+    this.render("features", this.features);
+    this._onChange?.();
+    this.state.features.refresh("active");
   }
 
   get renderer() {
     return this._source.renderer;
   }
 
-  public render(type: "features" | "points", items: Feature[] | Point<FeatureProps>[]) {
-    switch (type) {
-      case "features":
-        const foreground = this._hovered
-          ? [this._hovered.points || this._hovered.lines || this._hovered.planes]
-          : this._selected;
-
-        const sorted = [
-          ...(items as Feature[]).filter((feature) => !foreground.includes(feature.id)),
-          ...(items as Feature[]).filter((feature) => foreground.includes(feature.id)),
-        ] as Feature[];
-
-        return this._source.renderFeatures(sorted);
-      case "points":
-        return this._source.renderPoints(items as Point<FeatureProps>[]);
-    }
-  }
-
-  private _addHandlers() {
-    this._source.addListener("mouseenter", "points", this._handleGeometryEnter);
-    this._source.addListener("mouseenter", "lines", this._handleGeometryEnter);
-    this._source.addListener("mouseenter", "planes", this._handleGeometryEnter);
-  }
-
-  private _removeHandlers() {
-    this._source.removeListener("mouseenter", "points", this._handleGeometryEnter);
-    this._source.removeListener("mouseenter", "lines", this._handleGeometryEnter);
-    this._source.removeListener("mouseenter", "planes", this._handleGeometryEnter);
-  }
-
   public remove() {
-    this._removeHandlers();
     this._source.remove();
   }
 }

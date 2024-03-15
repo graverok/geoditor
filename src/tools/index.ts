@@ -1,2 +1,2 @@
-export * from "./edit-tool";
-export * from "./pen-tool";
+export { EditTool } from "./edit-tool";
+export { PenTool } from "./pen-tool";

@@ -1,17 +1,21 @@
-import { Feature, Polygon, Position, Point, LineString, MultiLineString, MultiPolygon, FeatureProps } from "./types";
+import { Feature, Polygon, Position, Point, LineString, MultiLineString, MultiPolygon } from "./types";
 
-const getPositions = (feature: Feature | undefined, indices: number[]): Position[] => {
+const getCoordinates = (feature: Feature | undefined, nesting: number[]): Position[] => {
   if (!feature) return [];
+  if (feature.nesting[0] !== nesting[0]) return [];
+
   switch (feature.type) {
     case "LineString":
+      if (nesting.length > 1 && nesting[1] > 0) return [];
       return Array.from(feature.coordinates);
     case "MultiLineString":
     case "Polygon":
-      if (indices.length < 1) return [];
-      return Array.from(feature.coordinates[indices[0]] ?? []);
+      if (nesting.length < 1) return [];
+      if (nesting.length > 2 && nesting[1] > 0) return [];
+      return Array.from(feature.coordinates[nesting[1]] ?? []);
     case "MultiPolygon":
-      if (indices.length < 2) return [];
-      return Array.from(feature.coordinates[indices[0]]?.[indices[1]] ?? []);
+      if (nesting.length < 2) return [];
+      return Array.from(feature.coordinates[nesting[1]]?.[nesting[2]] ?? []);
     default:
       return [];
   }
@@ -19,25 +23,29 @@ const getPositions = (feature: Feature | undefined, indices: number[]): Position
 
 const traverseCoordinates = (
   feature: Feature,
-  callback: (positions: Position[], indices: number[]) => Position[] | void,
+  callback: (points: Position[], indices: number[]) => Position[] | void,
 ): Feature => {
   switch (feature.type) {
     case "LineString":
       return {
         ...feature,
-        coordinates: callback(feature.coordinates, []) || feature.coordinates,
+        coordinates: callback(feature.coordinates, [...feature.nesting]) || feature.coordinates,
       };
+
     case "Polygon":
     case "MultiLineString":
       return {
         ...feature,
-        coordinates: feature.coordinates.map((positions, i) => callback(positions, [i]) || positions),
+        coordinates: feature.coordinates.map(
+          (positions, i) => callback(positions, [...feature.nesting, i]) || positions,
+        ),
       };
+
     case "MultiPolygon":
       return {
         ...feature,
         coordinates: feature.coordinates.map((shapes, i) =>
-          shapes.map((positions, j) => callback(positions, [i, j]) || positions),
+          shapes.map((positions, j) => callback(positions, [...feature.nesting, i, j]) || positions),
         ),
       };
     default:
@@ -45,82 +53,144 @@ const traverseCoordinates = (
   }
 };
 
-const updateShape = (
-  feature: Omit<Feature, "coordinates"> & { coordinates?: Feature["coordinates"] },
-  indices: number[],
-  positions: Position[],
-): Feature => {
-  if (!feature) return feature;
+const mutateFeature = (
+  feature: Feature | undefined,
+  nesting: number[],
+  positions?: Position[] | ((current: Position[] | undefined) => Position[] | undefined),
+): Feature | undefined => {
+  if (!feature) return undefined;
+  if (feature.nesting[0] !== nesting[0]) return feature;
+  const shapes = nesting.slice(1);
+
+  const parse = (current?: Position[]): Position[][] => {
+    if (!positions) return [];
+    if (typeof positions === "function") {
+      const res = positions(current || []);
+      return res?.length ? [res] : [];
+    }
+    return positions?.length ? [positions] : [];
+  };
+
+  const _mutateLineString = (f: Feature<LineString> | Feature<MultiLineString>, c: Position[][]) => {
+    switch (c.length) {
+      case 0:
+        return undefined;
+      case 1:
+        return { ...f, type: "LineString", coordinates: c[0] } as Feature<LineString>;
+      default:
+        return { ...f, type: "MultiLineString", coordinates: c } as Feature<MultiLineString>;
+    }
+  };
+
+  const _mutatePolygon = (f: Feature<Polygon> | Feature<MultiPolygon>, c: Position[][][]) => {
+    const r = c.filter((i) => i.length);
+    switch (r.length) {
+      case 0:
+        return undefined;
+      case 1:
+        return { ...f, type: "Polygon", coordinates: r[0] } as Feature<Polygon>;
+      default: {
+        return { ...f, type: "MultiPolygon", coordinates: r } as Feature<MultiPolygon>;
+      }
+    }
+  };
+
   switch (feature.type) {
     case "LineString":
-      return { ...feature, coordinates: positions } as Feature<LineString>;
+      return _mutateLineString(
+        feature,
+        shapes.length
+          ? [...(feature.coordinates?.length ? [feature.coordinates].slice(0, shapes[0]) : []), ...parse()]
+          : parse(feature.coordinates),
+      );
     case "MultiLineString":
+      return _mutateLineString(
+        feature,
+        shapes.length
+          ? [
+              ...(feature.coordinates || []).slice(0, shapes[0]),
+              ...parse(feature.coordinates[shapes[0]]),
+              ...(feature.coordinates || []).slice(shapes[0] + 1),
+            ]
+          : parse(),
+      );
+
     case "Polygon":
-      if (indices.length < 1)
-        return { ...feature, coordinates: feature?.coordinates || [] } as Feature<MultiLineString> | Feature<Polygon>;
-      return {
-        ...feature,
-        coordinates: [
-          ...(feature.coordinates || []).slice(0, indices[0]),
-          positions,
-          ...(feature.coordinates || []).slice(indices[0] + 1),
-        ],
-      } as Feature<MultiLineString> | Feature<Polygon>;
+      return _mutatePolygon(
+        feature,
+        shapes.length > 1
+          ? [...[[...(feature.coordinates || [])]].slice(0, shapes[0]), parse()]
+          : shapes.length
+            ? [
+                [
+                  ...(feature.coordinates || []).slice(0, shapes[0]),
+                  ...parse(feature.coordinates[shapes[0]]),
+                  ...(feature.coordinates || []).slice(shapes[0] + 1),
+                ],
+              ]
+            : [parse()],
+      );
+
     case "MultiPolygon":
-      if (indices.length < 2) return { ...feature, coordinates: feature?.coordinates || [] } as Feature<MultiPolygon>;
-      return {
-        ...feature,
-        coordinates: [
-          ...(feature.coordinates ?? []).slice(0, indices[0]),
-          [
-            ...(feature.coordinates?.[indices[0]] ?? []).slice(0, indices[1]),
-            positions,
-            ...(feature.coordinates?.[indices[0]] ?? []).slice(indices[1] + 1),
-          ],
-          ...(feature.coordinates ?? []).slice(indices[0] + 1),
-        ],
-      } as Feature<MultiPolygon>;
+      return _mutatePolygon(
+        feature,
+        shapes.length > 1
+          ? [
+              ...(feature.coordinates ?? []).slice(0, shapes[0]),
+              [
+                ...(feature.coordinates?.[shapes[0]] ?? []).slice(0, shapes[1]),
+                ...parse(feature.coordinates?.[shapes[0]]?.[shapes[1]]),
+                ...(feature.coordinates?.[shapes[0]] ?? []).slice(shapes[1] + 1),
+              ],
+              ...(feature.coordinates ?? []).slice(shapes[0] + 1),
+            ]
+          : shapes.length
+            ? [
+                ...(feature.coordinates ?? []).slice(0, shapes[0]),
+                parse(),
+                ...(feature.coordinates ?? []).slice(shapes[0] + 1),
+              ]
+            : [parse()],
+      );
 
     default:
-      return { ...feature, coordinates: feature?.coordinates || [] } as Feature;
+      return feature;
   }
 };
 
-const createMiddlePoints = (features: Feature[], shapes?: number[]): Point<FeatureProps>[] => {
-  return features.reduce((acc, feature) => {
-    traverseCoordinates(feature, (positions, indices) => {
-      if (shapes && !isArrayEqual(indices.slice(0, shapes.length), shapes)) return;
-      const startIndex = toPoints(positions, feature.type).length;
-      positions.slice(1).forEach((position, index) => {
-        acc.push({
-          fid: feature.id,
-          coordinates: math.normalize(math.average(position, positions[index])),
-          indices: [...indices, startIndex + index],
-          props: feature.props,
+const createPoints = (features: Feature[], active?: (number | number[])[]) => {
+  if (!active)
+    return features.reduce((acc, feature) => {
+      traverseCoordinates(feature, (positions, indices) => {
+        toPositions(positions, feature.type).forEach((position, index) => {
+          acc.push({
+            coordinates: position,
+            nesting: [...indices, index],
+            props: feature.props,
+          });
         });
       });
-    });
 
-    return acc;
-  }, [] as Point<FeatureProps>[]);
-};
+      return acc;
+    }, [] as Point[]);
 
-const createPoints = (features: Feature[], shapes?: number[]): Point<FeatureProps>[] => {
-  return features.reduce((acc, feature) => {
+  return active.reduce((acc, nesting) => {
+    const feature = features.find((f) => (Array.isArray(nesting) ? nesting[0] : nesting) === f.nesting[0]);
+    if (!feature) return acc;
+
     traverseCoordinates(feature, (positions, indices) => {
-      if (shapes && !isArrayEqual(indices.slice(0, shapes.length), shapes)) return;
-      toPoints(positions, feature.type).forEach((position, index) => {
+      if (Array.isArray(nesting) && !array.equal(indices.slice(0, nesting.length), nesting)) return;
+      toPositions(positions, feature.type).forEach((position, index) => {
         acc.push({
-          fid: feature.id,
           coordinates: position,
-          indices: [...indices, index],
+          nesting: [...indices, index],
           props: feature.props,
         });
       });
     });
 
     return acc;
-  }, [] as Point<FeatureProps>[]);
+  }, [] as Point[]);
 };
 
 const toCoordinates = (positions: Position[], type?: Feature["type"]) => {
@@ -133,13 +203,13 @@ const toCoordinates = (positions: Position[], type?: Feature["type"]) => {
   }
 };
 
-const toPoints = (positions: Position[], type?: Feature["type"]) => {
+const toPositions = (coordinates: Position[], type?: Feature["type"]) => {
   switch (type) {
     case "Polygon":
     case "MultiPolygon":
-      return positions.slice(0, positions.length - 1);
+      return coordinates.slice(0, coordinates.length - 1);
     default:
-      return positions;
+      return coordinates;
   }
 };
 
@@ -160,10 +230,7 @@ const math = {
     if (!start || !end) return start || end;
     return [(start[0] + end[0]) * 0.5, (start[1] + end[1]) * 0.5];
   },
-  equal: (start: Position, end: Position) => {
-    if (!start || !end) return false;
-    return start[0] === end[0] && start[1] === end[1];
-  },
+
   distance: (start: Position, end: Position): number => {
     if (!start || !end) return -1;
     return Math.sqrt(Math.pow(end[0] - start[0], 2) + Math.pow(end[1] - start[1], 2));
@@ -183,28 +250,33 @@ const math = {
     ]),
 };
 
-const isArrayEqual = (a: number[], b: number[]) => {
-  if (a.length !== b.length) return false;
-  return !a.some((x, i) => x !== b[i]);
-};
-
-const comparePoints = <T extends Omit<Point, "coordinates">>(prev: T[], next: T[]): [T[], T[]] => {
-  return [
-    prev.filter((item) => !next.some((point) => point.fid === item.fid && isArrayEqual(point.indices, item.indices))),
-    next.filter((item) => !prev.some((point) => point.fid === item.fid && isArrayEqual(point.indices, item.indices))),
-  ];
+const array = {
+  equal: <T extends string | number | boolean>(a: T | (T | T[])[], b: T | (T | T[])[], partial = false): boolean => {
+    if (typeof a !== "object" || typeof b !== "object") return a === b;
+    if (a.length !== b.length && !partial) return false;
+    return partial && a.length > b.length
+      ? !b.some((x, i) => !array.equal(x, a[i], partial))
+      : !a.some((x, i) => !array.equal(x, b[i], partial));
+  },
+  intersect: <T extends string | number | boolean>(a: T[], b: T[]): boolean => {
+    return a.some((x) => b.includes(x));
+  },
+  unarray: <T extends string | number | boolean>(a: T | T[]): T => {
+    return Array.isArray(a) ? array.unarray(a[0]) : a;
+  },
+  arrify: <T extends string | number | boolean>(a: T | T[]): T[] => {
+    return Array.isArray(a) ? a : [a];
+  },
 };
 
 export {
-  isArrayEqual,
   isPolygonLike,
-  comparePoints,
   createPoints,
-  createMiddlePoints,
-  getPositions,
-  updateShape,
-  toPoints,
+  getCoordinates,
+  toPositions,
   toCoordinates,
   traverseCoordinates,
+  mutateFeature,
   math,
+  array,
 };

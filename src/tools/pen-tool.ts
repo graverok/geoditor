@@ -4,13 +4,12 @@ import { DrawType, Feature, LineString, Point, Polygon, Position, SourceEvent } 
 
 export class PenTool extends AnyTool {
   private _geometry: Position[] | undefined;
-  private _indices: number[] = [];
-  private _ignoreMapEvents = false;
+  private _feature: Feature | undefined;
+  private _ignoreCanvas = false;
   private _isReversed = false;
   private _types: DrawType[] = [];
   private _resetCursor!: (() => void) | undefined;
   private _props: Record<string, any> | undefined;
-  private _storedSelected: number[] | undefined;
 
   constructor(core: Core) {
     super(core);
@@ -22,259 +21,251 @@ export class PenTool extends AnyTool {
     this._handlePointMouseDown = this._handlePointMouseDown.bind(this);
     this._activateFinishNodes = this._activateFinishNodes.bind(this);
     this._handleCanvasLeave = this._handleCanvasLeave.bind(this);
-    this._handleModifyKey = this._handleModifyKey.bind(this);
   }
 
-  private _activateFinishNodes() {
-    if (!this._geometry) {
-      this.core.selectedPoints = [];
-      return;
-    }
+  private _activateFinishNodes(hover = false) {
+    let _geometry = this._getShapeGeometry();
+    /** Placeholder */
+    if (Number(this._types.includes("LineString")) + _geometry.length < 3) return [];
 
-    let _geometry = this._geometry;
-    const feature = this._getFeature();
-
-    if (feature) {
-      let shape = lib.toPoints(lib.getPositions(feature, this._indices), feature.type);
-      if (this._isReversed) shape.reverse();
-      _geometry = [...shape, ...this._geometry];
-    }
-
-    /** New Feature */
-    if (Number(this._types.includes("LineString")) + _geometry.length < 3) {
-      this.core.selectedPoints = [];
-      return;
-    }
-
-    const _types: Feature["type"][] = feature && feature?.type !== "LineString" ? [feature.type] : this._types;
-
-    this.core.selectedPoints = [
+    const _types: Feature["type"][] =
+      this._feature && this._feature?.type !== "LineString" ? [this._feature.type] : this._types;
+    const endings = [
       ...((_types.includes("Polygon") || _types.includes("MultiPolygon")) && _geometry.length >= 3
-        ? [{ fid: this.core.selected[0], indices: [...this._indices, 0] }]
+        ? [[...(this.core.state.features.get("active")[0] as number[]), this._isReversed ? _geometry.length - 1 : 0]]
         : []),
-      { fid: this.core.selected[0], indices: [...this._indices, _geometry.length - 1] },
+      [...(this.core.state.features.get("active")[0] as number[]), this._isReversed ? 0 : _geometry.length - 1],
     ];
+    this.core.state.points.remove("disabled", endings);
+
+    if (!hover) return;
+    this._ignoreCanvas = true;
+    this.core.state.points.set("hover", [endings[endings.length - 1]]);
+    this.core.setCursor("pointer");
   }
 
-  private _activateStartingNodes(features: Feature[]) {
-    let points: Omit<Point, "coordinates">[] = [];
+  private _activateStartingNodes(features: Feature[], active: (number | number[])[]) {
+    let points: number[][] = [];
     features.forEach((feature) => {
       if (!feature) return;
       if (lib.isPolygonLike(feature)) return;
+      if (!active.map(lib.array.unarray).includes(lib.array.unarray(feature.nesting))) return;
       lib.traverseCoordinates(feature, (positions, indices) => {
-        points.push({ fid: feature.id, indices: [...indices, 0] });
-        points.push({ fid: feature.id, indices: [...indices, positions.length - 1] });
+        if (!active.map(lib.array.arrify).some((n) => lib.array.equal(n, indices, true))) return;
+        points.push([...indices, 0]);
+        points.push([...indices, positions.length - 1]);
       });
     });
-    this.core.selectedPoints = points;
+    this.core.state.points.remove("disabled", points);
   }
 
-  private _getFeature() {
-    let feature = this.core.getFeature(this.core.selected[0]);
-    if (!feature) return;
-
-    /* Convert to MultiShape */
-    if (feature.type === "LineString" && this._indices.length === 1)
-      return { ...feature, type: "MultiLineString", coordinates: [feature.coordinates] } as Feature;
-    if (feature.type === "Polygon" && this._indices.length === 2)
-      return { ...feature, type: "MultiPolygon", coordinates: [feature.coordinates] } as Feature;
-
-    return feature;
+  private _getShapeGeometry(next?: Position) {
+    let shape = this._feature
+      ? lib.toPositions(
+          lib.getCoordinates(this._feature, this.core.state.features.get("active")[0] as number[]),
+          this._feature.type,
+        )
+      : [];
+    return this._isReversed
+      ? [...(next ? [next] : []), ...(this._geometry || []), ...shape]
+      : [...shape, ...(this._geometry || []), ...(next ? [next] : [])];
   }
 
-  private _getShapeGeometry(geometry: Position[], asRender = true) {
-    let feature = this._getFeature();
-    let shape = feature ? lib.toPoints(lib.getPositions(feature, this._indices), feature.type) : [];
-    if (asRender) {
-      if (this._isReversed) shape.reverse();
-      return [...shape, ...geometry];
-    } else {
-      return this._isReversed ? [...geometry.reverse(), ...shape] : [...shape, ...geometry];
-    }
-  }
-
-  private _getRenderFeature(feature: Feature | undefined, geometry: Position[], point?: Point) {
+  private _mutateFeature(geometry: Position[], finish?: Point) {
     const renderType: Feature["type"] =
-      !feature || feature.type === "LineString"
+      !this._feature || this._feature.type === "LineString"
         ? (this._types.includes("LineString") || geometry.length < 3) &&
-          (!point || point.indices[point.indices.length - 1] !== 0)
+          (!finish || finish.nesting[finish.nesting.length - 1] !== (this._isReversed ? geometry.length - 1 : 0))
           ? "LineString"
           : "Polygon"
-        : feature.type;
+        : this._feature.type;
 
-    const _indices = renderType !== "LineString" && this._indices.length === 0 ? [0] : this._indices;
-    return lib.updateShape(
-      feature
-        ? {
-            ...feature,
+    return lib.mutateFeature(
+      this._feature
+        ? ({
+            ...this._feature,
             coordinates:
-              feature.type === "LineString" && renderType !== "LineString"
-                ? [feature.coordinates]
-                : feature.coordinates,
+              this._feature.type === "LineString" && renderType !== "LineString"
+                ? [this._feature.coordinates]
+                : this._feature.coordinates,
             type: renderType,
-          }
-        : { id: this.core.selected[0], type: renderType, props: this._props },
-      _indices,
+          } as Feature)
+        : ({ nesting: [this.core.features.length], type: renderType, props: this._props } as Feature),
+      this.core.state.features.get("active")[0] as number[],
       lib.toCoordinates(geometry, renderType),
     );
   }
 
   private _render(next?: Position) {
-    if (!this.core.selected[0]) return;
-    if (!this._geometry) return;
-    let _geometry = this._getShapeGeometry([...this._geometry, ...(next ? [next] : [])]);
-    let _feature = this._getFeature();
+    let _geometry = this._getShapeGeometry(next);
+    this.core.isolateFeatures();
 
     /** Placeholder line */
     if (Number(this._types.includes("LineString")) + _geometry.length < 3) {
-      _feature = {
-        id: this.core.features.length + 1,
+      const _feature = {
+        nesting: [this.core.features.length],
         type: "LineString",
         coordinates: _geometry,
-        props: _feature ? _feature?.props : this._props,
-      };
+        props: this._feature ? this._feature.props : this._props,
+      } as Feature;
       this.core.render("features", [...this.core.features, _feature]);
-      !next && this.core.render("points", lib.createPoints([_feature]));
+      this.core.state.features.add("active", [[this.core.features.length]]);
+
+      if (next) return;
+      const points = lib.createPoints([_feature]);
+      this.core.state.points.add(
+        "disabled",
+        points.map((p) => p.nesting),
+      );
+      this.core.render("points", points);
       return;
     }
 
-    _feature = this._getRenderFeature(_feature, _geometry);
+    const _feature = this._mutateFeature(_geometry) as Feature;
     this.core.render("features", [
-      ...this.core.features.slice(0, this.core.selected[0] - 1),
+      ...this.core.features.slice(0, _feature.nesting[0]),
       _feature,
-      ...this.core.features.slice(this.core.selected[0]),
+      ...this.core.features.slice(_feature.nesting[0] + 1),
     ]);
-    !next && this.core.render("points", lib.createPoints([_feature]));
-  }
 
-  private _handleModifyKey(e: KeyboardEvent) {
-    console.log(e.shiftKey);
+    if (next) return;
+    const points = lib.createPoints([_feature], this.core.state.features.get("active"));
+    this.core.state.points.add(
+      "disabled",
+      points.map((p) => p.nesting),
+    );
+    this.core.render("points", points);
   }
 
   private _handleCanvasMouseMove(e: SourceEvent) {
-    if (!this.core.hovered?.points) this._ignoreMapEvents = false;
-    this.core.setCursor(this.core.hovered?.points && this._ignoreMapEvents ? "pointer" : "crosshair");
-    if (this._ignoreMapEvents) return;
+    const isPoint = e.points.some((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+    this.core.setCursor(
+      isPoint
+        ? "pointer"
+        : !e.originalEvent.altKey ||
+            e.planes.some((p) => lib.array.unarray(this.core.state.features.get("active")[0]) === p.nesting[0])
+          ? "crosshair"
+          : "default",
+    );
+    this._ignoreCanvas = isPoint;
+    if (isPoint) return;
     if (!this._geometry) return;
-
     this._render(e.position);
   }
 
   private _handleCanvasClick(e: SourceEvent) {
-    if (this._ignoreMapEvents) return;
+    if (this._ignoreCanvas) return;
 
     if (this._geometry) {
-      this.core.selectedPoints = [];
-      this._geometry = [...this._geometry, e.position];
+      this._geometry = this._isReversed ? [e.position, ...this._geometry] : [...this._geometry, e.position];
       this._render();
-      this._activateFinishNodes();
-
-      /** Hover current point */
-      if (this.core.selectedPoints.length) {
-        const _geometry = this._getShapeGeometry(this._geometry);
-        this.core.setState({ hovered: true }, "points", this.core.selected[0], [
-          ...this._indices,
-          _geometry.length - 1,
-        ]);
-        this.core.setCursor("pointer");
-      }
+      this._activateFinishNodes(true);
       return;
     }
 
     if (e.originalEvent.shiftKey || e.originalEvent.altKey) {
-      if (this.core.selected.length !== 1) return;
-      const feature = this._getFeature();
-      if (!feature) return;
+      if (this.core.state.features.get("active").length !== 1) return;
+      this._feature = this.core.getFeature(lib.array.unarray(this.core.state.features.get("active")[0]));
+      if (!this._feature) return;
 
       if (e.originalEvent.shiftKey) {
-        if (feature.type === "MultiPolygon" || feature.type === "Polygon") {
+        if (this._feature.type === "MultiPolygon" || this._feature.type === "Polygon") {
           this._types = ["Polygon"];
-          this._indices = [feature.type === "Polygon" ? 1 : feature.coordinates.length, 0];
+          this.core.state.features.set("active", [
+            [...this._feature.nesting, this._feature.type === "Polygon" ? 1 : this._feature.coordinates.length, 0],
+          ]);
         } else {
           this._types = ["LineString"];
-          this._indices = [feature.type === "LineString" ? 1 : feature.coordinates.length];
+          this.core.state.features.set("active", [
+            [...this._feature.nesting, this._feature.type === "LineString" ? 1 : this._feature.coordinates.length],
+          ]);
         }
       }
 
       if (e.originalEvent.altKey) {
-        // TODO: Add Multipolygon support
-        if (feature.type !== "Polygon") return;
+        if (!lib.isPolygonLike(this._feature)) return;
+        const plane = e.planes.filter((p) => this._feature?.nesting[0] === p.nesting[0])[0];
+        if (!plane) return;
+
         this._types = ["Polygon"];
-        this._indices = [feature.coordinates.length];
+        this.core.state.features.set(
+          "active",
+          this._feature.type === "Polygon"
+            ? [[...plane.nesting, this._feature.coordinates.length]]
+            : [[...plane.nesting, this._feature.coordinates[plane.nesting[1]].length]],
+        );
       }
 
       this._geometry = [e.position];
       this._render();
-      this.core.setState({ hovered: true }, "lines", this.core.selected[0]);
-      this.core.setState({ hovered: true }, "planes", this.core.selected[0]);
       return;
     }
 
-    const id = this.core.features.length + 1;
+    this._feature = {
+      type: this._types.includes("LineString") ? "LineString" : "Polygon",
+      coordinates: [],
+      props: this._props,
+      nesting: [this.core.features.length],
+    };
+    const count = this.core.features.length;
     this._geometry = [e.position];
-    this._indices = this._types.includes("LineString") ? [] : [0];
-    this.core.selectedPoints = [];
-    this.core.selected = [id];
-    this._storedSelected = undefined;
+    this.core.state.features.set("active", this._types.includes("LineString") ? [[count]] : [[count, 0]]);
     this._render();
-    this.core.setState({ hovered: true }, "lines", id);
-    this.core.setState({ hovered: true }, "planes", id);
+    this._activateFinishNodes();
   }
 
   private _handlePointMouseEnter(e: SourceEvent) {
-    const point = e.points.find((n) => this.core.isPointSelected(n));
+    const point = e.points.find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
     if (!point) return;
-    this._ignoreMapEvents = true;
 
-    const handleMouseLeave = () => {
-      this._ignoreMapEvents = false;
-      this.core.setState({ hovered: false }, "points", point.fid, point.indices);
-      this.core.removeListener("mouseleave", "points", handleMouseLeave);
+    this.core.state.points.set("hover", [point.nesting]);
+
+    const _onMove = (ev: SourceEvent) => {
+      if (lib.array.equal(ev.points[0].nesting ?? [], point.nesting)) return;
+      this.core.state.points.set("hover", [ev.points[0].nesting]);
     };
 
-    this.core.setState({ hovered: true }, "points", point.fid, point.indices);
-    this.core.addListener("mouseleave", "points", handleMouseLeave);
+    const _onLeave = () => {
+      this.core.state.points.set("hover", []);
+      this.core.removeListener("mouseleave", "points", _onLeave);
+      this.core.removeListener("mousemove", "points", _onMove);
+    };
+
+    this.core.addListener("mouseleave", "points", _onLeave);
+    this.core.addListener("mousemove", "points", _onMove);
 
     if (!this._geometry) return;
     this._render(point.coordinates);
   }
 
   private _handlePointMouseDown(e: SourceEvent) {
-    const point = e.points.find((n) => this.core.isPointSelected(n));
+    const point = e.points.find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
     if (!point) return;
-    this._ignoreMapEvents = true;
-    this.core.setState({ active: true }, "points", point.fid, point.indices);
-    document.addEventListener(
-      "mouseup",
-      () => this.core.setState({ active: false }, "points", point.fid, point.indices),
-      { once: true },
-    );
+    this.core.state.points.add("active", [point.nesting]);
+    document.addEventListener("mouseup", () => this.core.state.points.remove("active", [point.nesting]), {
+      once: true,
+    });
   }
 
   private _handlePointClick(e: SourceEvent) {
-    const point = e.points.find((n) => this.core.isPointSelected(n));
+    const point = e.points.find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
     if (!point) return;
     if (this._geometry) {
-      this._ignoreMapEvents = true;
-
-      const feature = this._getRenderFeature(this._getFeature(), this._getShapeGeometry(this._geometry, false), point);
-      this.core.setState({ hovered: false }, "points", point.fid, point.indices);
-
+      const feature = this._mutateFeature(this._getShapeGeometry(), point) as Feature;
+      this.core.state.points.remove("hover", [point.nesting]);
       this._resetDraw();
-      this._activateStartingNodes([feature]);
+      this._activateStartingNodes([feature], this.core.state.features.get("active"));
       this.core.features = [
-        ...this.core.features.slice(0, this.core.selected[0] - 1),
+        ...this.core.features.slice(0, feature.nesting[0]),
         feature,
-        ...this.core.features.slice(this.core.selected[0]),
+        ...this.core.features.slice(feature.nesting[0] + 1),
       ];
     } else {
-      this.core.setState({ hovered: false }, "points", point.fid, point.indices);
-      this.core.selectedPoints = [];
-      this.core.selected = [point.fid];
-      this._storedSelected = undefined;
+      this.core.state.points.remove("hover", [point.nesting]);
       this._geometry = [];
-      this._indices = point.indices.slice(0, point.indices.length - 1);
-      this._isReversed = point.indices[point.indices.length - 1] === 0;
+      this._feature = this.core.getFeature(point.nesting[0]);
+      this.core.state.features.set("active", [point.nesting.slice(0, point.nesting.length - 1)]);
+      this._isReversed = point.nesting[point.nesting.length - 1] === 0;
       this._render();
       this._activateFinishNodes();
     }
@@ -295,25 +286,25 @@ export class PenTool extends AnyTool {
   private _resetDraw() {
     this._isReversed = false;
     this._geometry = undefined;
-    this._indices = [];
-    this.core.selectedPoints = [];
     this.core.render("features", this.core.features);
-    this.core.render("points", lib.createPoints(this.core.getSelectedFeatures()));
+    const points = lib.createPoints(this.core.features, this.core.state.features.get("active"));
+    this.core.state.points.set(
+      "disabled",
+      points.map((p) => p.nesting),
+    );
+    this.core.render("points", points);
   }
 
   public refresh() {
-    this.core.selectedPoints = [];
     this.core.render("features", this.core.features);
-    this.core.render("points", lib.createPoints(this.core.getSelectedFeatures()));
-
-    if (!this.core.selected.length && this._geometry) {
-      this.core.selected = [this.core.features.length + 1];
+    this.core.render("points", lib.createPoints(this.core.features, this.core.state.features.get("active")));
+    if (!this.core.state.features.get("active").length && this._geometry) {
+      this.core.state.features.set("active", [this.core.features.length + 1]);
     } else {
       if (this._geometry) {
-        console.log("yo");
         this._activateFinishNodes();
       } else {
-        this._activateStartingNodes(this.core.getSelectedFeatures());
+        this._activateStartingNodes(this.core.features, this.core.state.features.get("active"));
       }
     }
     this._render();
@@ -338,12 +329,8 @@ export class PenTool extends AnyTool {
     );
     this._resetCursor = this.core.setCursor("default");
 
-    if (this.core.selected.length > 1) {
-      this._storedSelected = this.core.selected;
-      this.core.selected = [];
-    }
     this._resetDraw();
-    this._activateStartingNodes(this.core.getSelectedFeatures());
+    this._activateStartingNodes(this.core.features, this.core.state.features.get("active"));
 
     this.core.addListener("mouseenter", "points", this._handlePointMouseEnter);
     this.core.addListener("mousedown", "points", this._handlePointMouseDown);
@@ -351,13 +338,9 @@ export class PenTool extends AnyTool {
     this.core.addListener("mousemove", this._handleCanvasMouseMove);
     this.core.addListener("click", this._handleCanvasClick);
     this.core.addListener("mouseout", this._handleCanvasLeave);
-    document.addEventListener("keydown", this._handleModifyKey);
-    document.addEventListener("keyup", this._handleModifyKey);
   }
 
   public disable() {
-    document.removeEventListener("keydown", this._handleModifyKey);
-    document.removeEventListener("keyup", this._handleModifyKey);
     this.core.removeListener("mouseout", this._handleCanvasLeave);
     this.core.removeListener("mousemove", this._handleCanvasMouseMove);
     this.core.removeListener("click", this._handleCanvasClick);
@@ -365,21 +348,17 @@ export class PenTool extends AnyTool {
     this.core.removeListener("mouseenter", "points", this._handlePointMouseEnter);
     this.core.removeListener("click", "points", this._handlePointClick);
     this._resetCursor?.();
-    if (this._storedSelected) {
-      this.core.selected = this._storedSelected;
-      this._storedSelected = undefined;
-    }
 
     if (!this._geometry?.length) return;
-    let _geometry = this._getShapeGeometry(this._geometry, false);
-    if (Number(this._types.includes("LineString")) + _geometry.length < 3) return this._resetDraw();
-
-    const feature = this._getRenderFeature(this._getFeature(), _geometry);
+    let _geometry = this._getShapeGeometry();
+    this._geometry = undefined;
+    if (Number(this._types.includes("LineString")) + _geometry.length < 3) return;
+    const feature = this._mutateFeature(_geometry) as Feature;
 
     this.core.features = [
-      ...this.core.features.slice(0, this.core.selected[0] - 1),
+      ...this.core.features.slice(0, feature.nesting[0]),
       feature,
-      ...this.core.features.slice(this.core.selected[0]),
+      ...this.core.features.slice(feature.nesting[0] + 1),
     ];
   }
 }
