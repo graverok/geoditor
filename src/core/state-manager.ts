@@ -14,18 +14,17 @@ export class StateManager {
   }
 
   public set(key: LayerState, next: (number | number[])[]) {
-    this._callback(
-      key,
-      next.reduce(
-        (acc, n) => (this._state[key].some((x) => lib.array.equal(n, x)) ? acc : [...acc, lib.array.arrify(n)]),
-        [] as number[][],
-      ),
-      this._state[key].reduce(
-        (acc, n) => (next.some((x) => lib.array.equal(n, x)) ? acc : [...acc, lib.array.arrify(n)]),
-        [] as number[][],
-      ),
+    const add = next.reduce(
+      (acc, n) => (this._state[key].some((x) => lib.array.equal(n, x)) ? acc : [...acc, lib.array.arrify(n)]),
+      [] as number[][],
     );
+    const remove = this._state[key].reduce(
+      (acc, n) => (next.some((x) => lib.array.equal(n, x)) ? acc : [...acc, lib.array.arrify(n)]),
+      [] as number[][],
+    );
+
     this._state[key] = next;
+    this._callback(key, add, remove);
   }
 
   public get(key: LayerState): (number | number[])[];
@@ -39,22 +38,22 @@ export class StateManager {
 
   public add(key: LayerState, add: (number | number[])[]) {
     const added = add.filter((n) => !this._state[key].some((x) => lib.array.equal(n, x)));
+    this._state[key] = [...this._state[key], ...added];
     this._callback(
       key,
       added.map((n) => lib.array.arrify(n)),
       [],
     );
-    this._state[key] = [...this._state[key], ...added];
   }
 
   public remove(key: LayerState, remove: (number | number[])[]) {
     const removed = remove.filter((n) => this._state[key].some((x) => lib.array.equal(n, x)));
+    this._state[key] = this._state[key].filter((n) => !removed.some((r) => lib.array.equal(n, r)));
     this._callback(
       key,
       [],
       removed.map((n) => lib.array.arrify(n)),
     );
-    this._state[key] = this._state[key].filter((n) => !removed.some((r) => lib.array.equal(n, r)));
   }
 
   public refresh(key: LayerState) {

@@ -16,7 +16,7 @@ export class AnyTool {
   public enable(...args: any[]) {}
   public disable() {}
   public refresh() {}
-  public delete(indices?: number[]): boolean | void {
+  public delete(indices?: (number | number[])[]): boolean | void {
     return;
   }
 }

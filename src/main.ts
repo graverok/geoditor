@@ -1,3 +1,4 @@
 export { Geoditor } from "./geoditor";
-export * from "./sources";
+export { Controller, AnyTool } from "./core";
+export { MapboxController } from "./controllers";
 export * from "./tools";

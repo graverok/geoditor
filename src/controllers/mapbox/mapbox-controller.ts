@@ -1,7 +1,7 @@
 import * as mapboxgl from "mapbox-gl";
 import * as geojson from "geojson";
-import * as lib from "../../lib";
-import { Source } from "../../controllers";
+import * as lib from "lib";
+import { Controller } from "../../core";
 import {
   Feature,
   LayerState,
@@ -31,7 +31,7 @@ const featureTypes = {
   planes: "Polygon",
 };
 
-export class MapboxSource extends Source {
+export class MapboxController extends Controller {
   private _map: mapboxgl.Map | undefined;
   private _features: Partial<Record<LayerType, geojson.Feature[]>> = {};
   private _requested: Partial<Record<LayerType, boolean>> = {};
@@ -330,14 +330,15 @@ export class MapboxSource extends Source {
 
     ids.forEach((id) => {
       if (!id) return;
-      if (value === this._states[layer]?.[key]?.includes(id)) return;
-      this._states[layer] = {
-        ...this._states[layer],
-        [key]: value
-          ? [...(this._states[layer]?.[key] ?? []), id]
-          : (this._states[layer]?.[key] ?? []).filter((x) => x !== id),
-      };
-      _changed = true;
+      if (value !== this._states[layer]?.[key]?.includes(id)) {
+        this._states[layer] = {
+          ...this._states[layer],
+          [key]: value
+            ? [...(this._states[layer]?.[key] ?? []), id]
+            : (this._states[layer]?.[key] ?? []).filter((x) => x !== id),
+        };
+        _changed = true;
+      }
       this._map?.setFeatureState(
         { id: (id as string).split(".").join("0"), source: this.layerNames[layer] },
         { [key]: value },
@@ -352,7 +353,7 @@ export class MapboxSource extends Source {
     if (layer === "points")
       return this._handleSetState(
         layer,
-        nesting.map((n) => `${n.join(".")}.`),
+        nesting.map((n) => `${n.map((x) => x + 1).join(".")}.`),
         key,
         value,
       );
@@ -360,7 +361,8 @@ export class MapboxSource extends Source {
     this._handleSetState(
       layer,
       nesting.reduce((acc, n) => {
-        const search = `${n.join(".")}.`;
+        const search = `${n.map((x) => x + 1).join(".")}.`;
+
         return [
           ...acc,
           search,
@@ -379,7 +381,7 @@ export class MapboxSource extends Source {
     this._features[type] = items.map(
       (item) =>
         ({
-          id: `${item.nesting.join(".")}.`,
+          id: `${item.nesting.map((x) => x + 1).join(".")}.`,
           type: "Feature",
           geometry: {
             type: featureTypes[type],

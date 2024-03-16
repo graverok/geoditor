@@ -17,8 +17,9 @@
   "main": "dist/geoditor.cjs.js",
   "module": "dist/geoditor.esm.js",
   "browser": "dist/geoditor.umd.js",
-  "types": "dist/types.d.ts",
+  "types": "dist/geoditor.d.ts",
   "keywords": [
+    "map",
     "mapbox",
     "editor",
     "geometry",

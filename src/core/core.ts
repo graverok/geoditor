@@ -1,11 +1,12 @@
-import { Source } from "./source";
-import { Feature, Point } from "../types";
-import { StateManager } from "./state-manager";
-import * as lib from "../lib";
 import * as geojson from "geojson";
+import * as lib from "../lib";
+import { Feature, Point } from "../types";
+import { Controller } from "./controller";
+import { StateManager } from "./state-manager";
 
 export class Core {
-  private _source: Source;
+  private _data: geojson.Feature[] = [];
+  private _source: Controller;
   public addListener;
   public removeListener;
   public setCursor;
@@ -17,7 +18,7 @@ export class Core {
   private readonly _onSelect!: (() => void) | undefined;
   private readonly _onChange!: (() => void) | undefined;
 
-  constructor(props: { source: Source; onSelect?: () => void; onChange?: () => void }) {
+  constructor(props: { source: Controller; onSelect?: () => void; onChange?: () => void }) {
     this._source = props.source;
     this._onSelect = props.onSelect;
     this._onChange = props.onChange;
@@ -56,17 +57,21 @@ export class Core {
 
   public reset() {
     this.state.features.set("active", []);
+    this.state.features.set("disabled", []);
     this.render("features", this.features);
     this.render("points", []);
   }
 
-  public isolateFeatures() {
+  public isolateFeatures(active?: (number | number[])[]) {
     this.state.features.set(
       "disabled",
-      this.state.features.get("active").length && !this.state.features.get("active").some((n) => typeof n === "number")
+      active ||
+        (this.state.features.get("active").length &&
+          !this.state.features.get("active").some((n) => typeof n === "number"))
         ? this.features.reduce(
             (acc, f) => {
-              if (this.state.features.get("active").map(lib.array.unarray).includes(f.nesting[0])) return acc;
+              if ((active || this.state.features.get("active")).map(lib.array.unarray).includes(f.nesting[0]))
+                return acc;
               return [...acc, f.nesting[0]];
             },
             [] as (number | number[])[],
@@ -76,7 +81,7 @@ export class Core {
   }
 
   get features() {
-    return (this._source.data as geojson.Feature[]).map(
+    return (this._data as geojson.Feature[]).map(
       (item, index) =>
         ({
           nesting: [index],
@@ -88,10 +93,13 @@ export class Core {
   }
 
   set features(features: Feature[]) {
-    this._source.data = features.map((item) =>
-      this._source.data[item.nesting[0]]
+    const next = lib.utils.updateSelected(features, this.state.features.get("active"));
+    this.state.features.set("active", []);
+    this.state.features.set("disabled", []);
+    this._data = features.map((item) =>
+      this._data[item.nesting[0]]
         ? ({
-            ...this._source.data[item.nesting[0]],
+            ...this.data[item.nesting[0]],
             geometry: {
               type: item.type,
               coordinates: item.coordinates,
@@ -107,8 +115,24 @@ export class Core {
           } as geojson.Feature),
     );
     this.render("features", this.features);
+    this.state.features.set("active", next);
     this._onChange?.();
-    this.state.features.refresh("active");
+  }
+
+  get data() {
+    return this._data;
+  }
+
+  set data(data) {
+    const isEqual = this._data.length === data.length;
+    this._data = data;
+    this.render("features", this.features);
+    if (isEqual) {
+      this.state.features.refresh("active");
+      return;
+    }
+    this.state.features.set("active", []);
+    this.state.features.set("disabled", []);
   }
 
   get renderer() {

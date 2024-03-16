@@ -1,18 +1,19 @@
-import { Source, AnyTool, Core } from "./controllers";
-import { PenTool, EditTool } from "./tools";
+import { Controller, AnyTool, Core } from "./core";
+import { PenTool, MoveTool } from "./tools";
 import * as lib from "./lib";
-import { Feature } from "./types";
 
-const defaultTools = {
-  pen: PenTool,
-  edit: EditTool,
+type Tools = {
+  move: MoveTool["enable"];
+  pen: PenTool["enable"];
+  delete: (indices?: number[]) => void;
+  off: () => void;
 };
 
 export class Geoditor {
-  private _tools: AnyTool[] = [];
+  private _tools: AnyTool[];
   private _tool: AnyTool | undefined;
   private readonly _core: Core;
-  private readonly _source: Source;
+  private readonly _source: Controller;
   private _onLoad: (() => void) | undefined;
   private _onChange: (() => void) | undefined;
   private _onSelect: (() => void) | undefined;
@@ -37,7 +38,7 @@ export class Geoditor {
     this._onLoad?.();
   }
 
-  constructor(source: Source, tools?: (typeof AnyTool | "pen" | "edit")[]) {
+  constructor(source: Controller, tools?: (typeof AnyTool)[]) {
     this._core = new Core({
       source,
       onSelect: () => this._onSelect?.(),
@@ -47,26 +48,17 @@ export class Geoditor {
       },
     });
     this._source = source;
-    this._tools = (tools ?? ["pen", "edit"]).reduce((res, item) => {
-      const Tool = typeof item === "string" ? (item in defaultTools ? defaultTools[item] : undefined) : item;
-      if (!Tool) return res;
-      return [...res, new Tool(this._core)];
-    }, [] as AnyTool[]);
-
+    this._tools = [PenTool, MoveTool, ...(tools || [])].map((Tool) => new Tool(this._core));
     source.onInit(() => this._onInit());
   }
 
   set data(data) {
-    if (data.length !== this._source.data.length) {
-      this._core.state.features.set("active", []);
-      this._core.isolateFeatures();
-    }
-    this._source.data = data;
+    this._core.data = data;
     this._tool?.refresh();
   }
 
   get data() {
-    return this._source.data;
+    return this._core.data;
   }
 
   get tool() {
@@ -87,32 +79,17 @@ export class Geoditor {
         },
       {
         delete: (indices?: number[]) => {
-          if (this._tool?.delete(indices)) return;
-
-          const deletion = indices || this._core.state.features.get("active");
-          if (!deletion.length) return;
-
-          const features = this._core.features.reduce((acc, feature) => {
-            const _focus = deletion.filter((n) => lib.array.unarray(n) === feature.nesting[0]);
-            if (!_focus.length) return [...acc, feature];
-            if (_focus.some((n) => typeof n === "number")) return acc;
-            const mutated = (_focus as number[][]).reduce<Feature | undefined>(
-              (mutating, nesting) => lib.mutateFeature(mutating, nesting),
-              feature,
-            );
-            return mutated ? [...acc, mutated] : acc;
-          }, [] as Feature[]);
-
-          this._core.state.features.set("active", []);
-          this._core.isolateFeatures();
-          this._core.features = features;
+          const _deletion = indices || this._core.state.features.get("active");
+          if (this._tool?.delete(_deletion)) return;
+          if (!_deletion.length) return;
+          this._core.features = lib.utils.deleteFeatures(this._core.features, _deletion);
         },
         off: () => {
           this._tool?.disable();
           this._tool = undefined;
           this._core.reset();
         },
-      } as Record<string, (...args: any[]) => void>,
+      } as Tools & Record<string, (...args: any[]) => void>,
     );
   }
 

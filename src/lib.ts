@@ -1,4 +1,5 @@
-import { Feature, Polygon, Position, Point, LineString, MultiLineString, MultiPolygon } from "./types";
+import { Feature, Position, Point } from "./types";
+import * as geojson from "geojson";
 
 const getCoordinates = (feature: Feature | undefined, nesting: number[]): Position[] => {
   if (!feature) return [];
@@ -71,26 +72,26 @@ const mutateFeature = (
     return positions?.length ? [positions] : [];
   };
 
-  const _mutateLineString = (f: Feature<LineString> | Feature<MultiLineString>, c: Position[][]) => {
+  const _mutateLineString = (f: Feature<geojson.LineString> | Feature<geojson.MultiLineString>, c: Position[][]) => {
     switch (c.length) {
       case 0:
         return undefined;
       case 1:
-        return { ...f, type: "LineString", coordinates: c[0] } as Feature<LineString>;
+        return { ...f, type: "LineString", coordinates: c[0] } as Feature<geojson.LineString>;
       default:
-        return { ...f, type: "MultiLineString", coordinates: c } as Feature<MultiLineString>;
+        return { ...f, type: "MultiLineString", coordinates: c } as Feature<geojson.MultiLineString>;
     }
   };
 
-  const _mutatePolygon = (f: Feature<Polygon> | Feature<MultiPolygon>, c: Position[][][]) => {
+  const _mutatePolygon = (f: Feature<geojson.Polygon> | Feature<geojson.MultiPolygon>, c: Position[][][]) => {
     const r = c.filter((i) => i.length);
     switch (r.length) {
       case 0:
         return undefined;
       case 1:
-        return { ...f, type: "Polygon", coordinates: r[0] } as Feature<Polygon>;
+        return { ...f, type: "Polygon", coordinates: r[0] } as Feature<geojson.Polygon>;
       default: {
-        return { ...f, type: "MultiPolygon", coordinates: r } as Feature<MultiPolygon>;
+        return { ...f, type: "MultiPolygon", coordinates: r } as Feature<geojson.MultiPolygon>;
       }
     }
   };
@@ -124,7 +125,7 @@ const mutateFeature = (
             ? [
                 [
                   ...(feature.coordinates || []).slice(0, shapes[0]),
-                  ...parse(feature.coordinates[shapes[0]]),
+                  ...parse(feature.coordinates?.[shapes[0]]),
                   ...(feature.coordinates || []).slice(shapes[0] + 1),
                 ],
               ]
@@ -230,7 +231,6 @@ const math = {
     if (!start || !end) return start || end;
     return [(start[0] + end[0]) * 0.5, (start[1] + end[1]) * 0.5];
   },
-
   distance: (start: Position, end: Position): number => {
     if (!start || !end) return -1;
     return Math.sqrt(Math.pow(end[0] - start[0], 2) + Math.pow(end[1] - start[1], 2));
@@ -269,6 +269,47 @@ const array = {
   },
 };
 
+const utils = {
+  deleteFeatures: (features: Feature[], deletion: (number | number[])[]) => {
+    return features.reduce((acc, feature) => {
+      if (!deletion.some((n) => array.unarray(n) === feature.nesting[0])) return [...acc, feature];
+      if (deletion.some((n) => n === feature.nesting[0])) return acc;
+      const _shapes = deletion.filter((n) => array.unarray(n) === feature.nesting[0]) as number[][];
+      const mutated = (_shapes as number[][]).reduce<Feature | undefined>(
+        (mutating, nesting) => mutateFeature(mutating, nesting),
+        feature,
+      );
+      return mutated ? [...acc, mutated] : acc;
+    }, [] as Feature[]);
+  },
+  updateSelected: (features: Feature[], active: (number | number[])[]) => {
+    return active.reduce((acc, n) => {
+      const feature = features.find((f) => f.nesting[0] === array.unarray(n));
+      if (!feature) {
+        /* Remove all shapes selection of this feature */
+        acc = acc.filter((s) => array.unarray(n) !== array.unarray(s));
+        /* Select nearest item if none is selected */
+        if (acc.length === 0 && features.length) acc = [Math.min(array.unarray(n), features.length - 1)];
+        return acc;
+      }
+      if (typeof n === "number") return acc;
+
+      let counts: number[] = [];
+      traverseCoordinates(feature, (_, indices) => {
+        indices.forEach((x, i) => {
+          if (x === 0 && i === indices.length - 1) return;
+          counts[i] = typeof counts[i] === "number" ? Math.max(counts[i], x) : x;
+        });
+        return;
+      });
+      return [
+        ...acc.filter((x) => !array.equal(x, n)),
+        counts.reduce((acc, x, i) => (typeof n[i] === "number" ? [...acc, Math.min(x, n[i])] : acc), [] as number[]),
+      ];
+    }, active);
+  },
+};
+
 export {
   isPolygonLike,
   createPoints,
@@ -279,4 +320,5 @@ export {
   mutateFeature,
   math,
   array,
+  utils,
 };

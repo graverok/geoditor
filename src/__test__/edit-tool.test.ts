@@ -1,4 +1,4 @@
-import { handleSetActive } from "../tools/edit-tool";
+import { handleSetActive } from "../tools/move-tool";
 
 test("handleSetActive: Select feature from none", () => {
   const res = handleSetActive(false, [], [0, 1]);

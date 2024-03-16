@@ -1,24 +1,6 @@
+import * as geojson from "geojson";
+
 export type Position = number[];
-
-export type LineString = {
-  type: "LineString";
-  coordinates: Position[];
-};
-
-export type MultiLineString = {
-  type: "MultiLineString";
-  coordinates: Position[][];
-};
-
-export type Polygon = {
-  type: "Polygon";
-  coordinates: Position[][];
-};
-
-export type MultiPolygon = {
-  type: "MultiPolygon";
-  coordinates: Position[][][];
-};
 
 export type DrawType = "LineString" | "Polygon";
 export type LayerType = "points" | "lines" | "planes";
@@ -27,7 +9,10 @@ export type FeatureProps = {
   color?: string;
 } & Record<string, any>;
 
-export type Feature<T = LineString | Polygon | MultiLineString | MultiPolygon, P = FeatureProps> = T & {
+export type Feature<
+  T = geojson.LineString | geojson.Polygon | geojson.MultiLineString | geojson.MultiPolygon,
+  P = FeatureProps,
+> = T & {
   nesting: number[];
   props?: P;
 };

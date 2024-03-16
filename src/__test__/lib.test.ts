@@ -51,6 +51,14 @@ test("lib.mutateFeature", () => {
     ...featurePolygon,
     coordinates: [insertion],
   });
+  expect(lib.mutateFeature({ ...featurePolygon, coordinates: undefined }, [0], insertion)).toEqual({
+    ...featurePolygon,
+    coordinates: [insertion],
+  });
+  expect(lib.mutateFeature({ ...featurePolygon, coordinates: undefined }, [0, 0], insertion)).toEqual({
+    ...featurePolygon,
+    coordinates: [insertion],
+  });
   expect(lib.mutateFeature(featurePolygon, [0, 0])).toEqual({
     ...featurePolygon,
     coordinates: [coords2, coords3],

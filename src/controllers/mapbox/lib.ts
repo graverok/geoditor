@@ -1,8 +1,8 @@
 import * as mapboxgl from "mapbox-gl";
 import * as geojson from "geojson";
 import { LayerType, Position, SourceEvent, SourceEventHandler } from "../../types";
-import { AddSourcePayload } from "./config";
 import * as lib from "../../lib";
+import { AddSourcePayload } from "./config";
 import { LayerFeatureProperties, ShapesCollection } from "./types";
 
 export const sortPointsByDistance = (

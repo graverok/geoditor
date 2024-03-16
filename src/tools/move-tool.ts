@@ -1,14 +1,14 @@
-import { AnyTool, Core } from "../controllers";
+import { AnyTool, Core } from "../core";
 import * as lib from "../lib";
 import { Feature, LayerType, Point, Position, SourceEvent } from "../types";
 
-export class EditTool extends AnyTool {
+export class MoveTool extends AnyTool {
   private _isDragging = false;
   private _resetCursor!: (() => void) | undefined;
 
   constructor(core: Core) {
     super(core);
-    this._name = "edit";
+    this._name = "move";
     this._handleFeatureHover = this._handleFeatureHover.bind(this);
     this._handleFeatureDeselect = this._handleFeatureDeselect.bind(this);
     this._handleGeometryMouseDown = this._handleGeometryMouseDown.bind(this);
@@ -302,6 +302,7 @@ export class EditTool extends AnyTool {
     this.core.addListener("mousedown", "points", this._handlePointDrag);
     this.core.addListener("mousedown", "lines", this._handleGeometryMouseDown);
     this.core.addListener("mousedown", "planes", this._handleGeometryMouseDown);
+    this.core.isolateFeatures();
     this._renderPoints();
   }
 
