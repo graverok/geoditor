@@ -2,7 +2,7 @@ import * as geojson from "geojson";
 
 export type Position = number[];
 
-export type DrawType = "LineString" | "Polygon";
+export type DrawType = "LineString" | "Polygon" | "MultiLineString" | "MultiPolygon";
 export type LayerType = "points" | "lines" | "planes";
 export type LayerState = "disabled" | "hover" | "active";
 export type FeatureProps = {

@@ -1,14 +1,13 @@
-import { AnyTool, Core } from "../core";
+import { AnyTool } from "../core";
 import * as lib from "../lib";
 import { Feature, LayerType, Point, Position, SourceEvent } from "../types";
 
 export class MoveTool extends AnyTool {
-  private _isDragging = false;
-  private _resetCursor!: (() => void) | undefined;
+  private _state: { dragging: boolean } = { dragging: false };
+  private _stored: { cursor?: () => void } = {};
 
-  constructor(core: Core) {
-    super(core);
-    this._name = "move";
+  constructor() {
+    super();
     this._handleFeatureHover = this._handleFeatureHover.bind(this);
     this._handleFeatureDeselect = this._handleFeatureDeselect.bind(this);
     this._handleGeometryMouseDown = this._handleGeometryMouseDown.bind(this);
@@ -44,21 +43,21 @@ export class MoveTool extends AnyTool {
   }
 
   private _handleFeatureHover(e: SourceEvent) {
-    if (this._isDragging) return;
+    if (this._state.dragging) return;
     let shapes = [...e.points, ...e.lines, ...e.planes].map((f) => f.nesting);
 
     if (this.core.state.features.get("active").every((n) => typeof n === "number")) {
-      this.core.setCursor(shapes.length ? "pointer" : "default");
-      this.core.state.features.set("hover", shapes.length ? [lib.array.unarray(shapes[0])] : []);
+      this.core.setCursor(shapes.length ? generateCursor("default", "pointer") : "default");
+      this.core.state.features.set("hover", shapes.length ? [lib.array.plain(shapes[0])] : []);
       return;
     }
 
     shapes = shapes.filter((n) =>
-      this.core.state.features.get("active").map(lib.array.unarray).includes(lib.array.unarray(n)),
+      this.core.state.features.get("active").map(lib.array.plain).includes(lib.array.plain(n)),
     );
 
     if (shapes.length) {
-      this.core.setCursor("pointer");
+      this.core.setCursor(generateCursor(e.points.length ? "point" : e.lines.length ? "line" : "polygon", "pointer"));
       this.core.state.features.set("hover", shapes.length ? [shapes[0]] : []);
     } else {
       this.core.setCursor("default");
@@ -71,13 +70,13 @@ export class MoveTool extends AnyTool {
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) {
       if (indices.length) return;
     } else {
-      if (lib.array.intersect(this.core.state.features.get("active").map(lib.array.unarray), indices)) return;
+      if (lib.array.intersect(this.core.state.features.get("active").map(lib.array.plain), indices)) return;
     }
 
     this.core.state.features.set("active", []);
-    this._handleFeatureHover(e);
     this.core.isolateFeatures();
     this._renderPoints();
+    this._handleFeatureHover(e);
   }
 
   private _handleGeometryMouseDown(e: SourceEvent) {
@@ -91,7 +90,7 @@ export class MoveTool extends AnyTool {
     this.core.state.features.set("active", state.active);
     this._renderPoints();
     let features = this.core.features;
-    this._isDragging = true;
+    this._state.dragging = true;
     let isChanged = false;
 
     const _onMove = (ev: SourceEvent) => {
@@ -104,11 +103,11 @@ export class MoveTool extends AnyTool {
         isChanged = true;
       }
       features = this.core.features.map((item) => {
-        const focused = this.core.state.features.get("active").filter((n) => lib.array.unarray(n) === item.nesting[0]);
+        const focused = this.core.state.features.get("active").filter((n) => lib.array.plain(n) === item.nesting[0]);
         if (!focused.length) return item;
         return lib.traverseCoordinates(item, (positions, indices) =>
           focused.some((n) => typeof n === "number" || lib.array.equal(n, indices.slice(0, n.length)))
-            ? positions.map((pos) => lib.math.geodesic(pos, e.position, ev.position))
+            ? positions.map((pos) => lib.coordinates.geodesic(pos, e.position, ev.position))
             : positions,
         );
       });
@@ -118,7 +117,7 @@ export class MoveTool extends AnyTool {
 
     const _onFinish = () => {
       this.core.removeListener("mousemove", _onMove);
-      this._isDragging = false;
+      this._state.dragging = false;
       if (isChanged) {
         this.core.features = features;
       } else {
@@ -129,6 +128,7 @@ export class MoveTool extends AnyTool {
         }
         this.refresh();
       }
+      this._handleFeatureHover(e);
     };
 
     this.core.addListener("mousemove", _onMove);
@@ -138,17 +138,17 @@ export class MoveTool extends AnyTool {
   private _handlePointHover(e: SourceEvent) {
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
     let point = e.points[0];
-    !this._isDragging && this.core.state.points.set("hover", [point.nesting]);
+    !this._state.dragging && this.core.state.points.set("hover", [point.nesting]);
 
     const _onMove = (ev: SourceEvent) => {
-      if (this._isDragging) return;
+      if (this._state.dragging) return;
       if (lib.array.equal(ev.points[0].nesting ?? [], point.nesting)) return;
       point = ev.points[0];
       this.core.state.points.set("hover", [point.nesting]);
     };
 
     const _onLeave = () => {
-      !this._isDragging && this.core.state.points.set("hover", []);
+      !this._state.dragging && this.core.state.points.set("hover", []);
       this.core.removeListener("mouseleave", "points", _onLeave);
       this.core.removeListener("mousemove", "points", _onMove);
     };
@@ -160,11 +160,11 @@ export class MoveTool extends AnyTool {
   private _handlePointDrag(e: SourceEvent) {
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
     let point = e.points[0];
-    let feature = this.core.getFeature(point?.nesting[0]);
+    let feature = this.core.getFeatures([point?.nesting[0]])[0];
     if (!point || !feature) return;
 
     let sibling: Point | undefined;
-    this._isDragging = true;
+    this._state.dragging = true;
 
     const pidx = point.nesting.length - 1;
     let positions = lib.toPositions(lib.getCoordinates(feature, point.nesting.slice(0, pidx)), feature.type);
@@ -202,7 +202,10 @@ export class MoveTool extends AnyTool {
     }
 
     const _onPointMove = (ev: SourceEvent) => {
-      sibling = ev.points.find((n) => !lib.array.equal(n.nesting, point.nesting));
+      sibling = ev.points.find(
+        (n) =>
+          !this.core.state.points.get(n.nesting).includes("disabled") && !lib.array.equal(n.nesting, point.nesting),
+      );
     };
 
     const _onPointLeave = () => {
@@ -214,8 +217,8 @@ export class MoveTool extends AnyTool {
       isChanged = true;
       feature = _updater(
         feature,
-        lib.math.normalize(
-          sibling?.coordinates || lib.math.add(point.coordinates, lib.math.subtract(e.position, ev.position)),
+        lib.coordinates.normalize(
+          sibling?.coordinates || lib.coordinates.move(point.coordinates, e.position, ev.position),
         ),
       );
       this.core.render("features", [
@@ -246,7 +249,8 @@ export class MoveTool extends AnyTool {
         ];
       }
       this._renderPoints();
-      this._isDragging = false;
+      this._state.dragging = false;
+      this._handleFeatureHover(e);
     };
 
     const isReducable = positions.length > 2 + Number(lib.isPolygonLike(feature));
@@ -264,7 +268,6 @@ export class MoveTool extends AnyTool {
         : point.nesting[pidx] + 1;
 
     const points = lib.createPoints([feature], this.core.state.features.get("active"));
-    this.core.render("points", points);
     this.core.state.points.add(
       "disabled",
       points.reduce((acc, p) => {
@@ -273,6 +276,7 @@ export class MoveTool extends AnyTool {
         return [...acc, p.nesting];
       }, [] as number[][]),
     );
+    this.core.render("points", points);
     this.core.state.points.set("hover", [point.nesting]);
     this.core.state.points.set("active", [point.nesting]);
 
@@ -283,10 +287,6 @@ export class MoveTool extends AnyTool {
     this.core.addListener("mouseleave", "points", _onPointLeave);
   }
 
-  get config() {
-    return;
-  }
-
   public refresh() {
     this.core.render("features", this.core.features);
     this.core.isolateFeatures();
@@ -294,7 +294,7 @@ export class MoveTool extends AnyTool {
   }
 
   public enable() {
-    this._resetCursor = this.core.setCursor("default");
+    this._stored.cursor = this.core.setCursor("default");
     this.core.addListener("mouseout", this._handleCanvasLeave);
     this.core.addListener("mouseenter", "points", this._handlePointHover);
     this.core.addListener("mousemove", this._handleFeatureHover);
@@ -314,13 +314,13 @@ export class MoveTool extends AnyTool {
     this.core.removeListener("click", this._handleFeatureDeselect);
     this.core.removeListener("mousemove", this._handleFeatureHover);
     this.core.removeListener("mouseout", this._handleCanvasLeave);
-    this._resetCursor?.();
+    this._stored.cursor?.();
   }
 }
 
 const createMiddlePoints = (features: Feature[], focused: (number | number[])[]): Point[] => {
   return focused.reduce((acc, nesting) => {
-    const feature = features[lib.array.unarray(nesting)];
+    const feature = features[lib.array.plain(nesting)];
     if (!feature) return acc;
 
     lib.traverseCoordinates(feature, (positions, indices) => {
@@ -328,7 +328,7 @@ const createMiddlePoints = (features: Feature[], focused: (number | number[])[])
       const startIndex = lib.toPositions(positions, feature.type).length;
       positions.slice(1).forEach((position, index) => {
         acc.push({
-          coordinates: lib.math.normalize(lib.math.average(position, positions[index])),
+          coordinates: lib.coordinates.normalize(lib.coordinates.average(position, positions[index])),
           nesting: [...indices, startIndex + index],
           props: feature.props,
         });
@@ -384,7 +384,7 @@ export const handleSetActive = (
      *  - [3] Release to select shape from multi-selection
      *  - [4] Release to feature selection
      * */
-    const _shapes = active.map(lib.array.arrify);
+    const _shapes = active.map(lib.array.array);
     if (!_shapes.some((n) => n[0] === nesting[0])) return; /* [1] */
     if (!_shapes.some((n) => lib.array.equal(n, nesting))) return { active: [nesting] }; /* [2] */
     if (_shapes.length > 1) return { active: active, release: () => [nesting] }; /* [3] */
@@ -420,7 +420,7 @@ export const handleSetActive = (
    *  - [3] Release to remove shape from multiple selection
    *  - [4] Keep shape selection
    * */
-  const _shapes = active.map(lib.array.arrify);
+  const _shapes = active.map(lib.array.array);
   if (!_shapes.some((n) => n[0] === nesting[0])) return; /* [1] */
   if (!_shapes.some((n) => lib.array.equal(n, nesting)))
     return {
@@ -432,4 +432,15 @@ export const handleSetActive = (
       release: () => active.filter((n) => !Array.isArray(n) || !lib.array.equal(n, nesting)),
     }; /* [3] */
   return { active: active }; /* [4] */
+};
+
+const generateCursor = (key: string, fallback: string) => {
+  return `url(${lib.createCursor(
+    {
+      shape: `<path d="M10 8L13.6229 24.8856L17.3004 18.4261L24.6282 17.1796L10 8Z" fill="none" stroke="white" stroke-linejoin="round" stroke-width="1.2"/>`,
+      contour: `<path fill-rule="evenodd" clip-rule="evenodd" d="M9.71322 7.59042C9.87786 7.47514 10.0955 7.46965 10.2658 7.57648L24.894 16.7561C25.0696 16.8663 25.159 17.0736 25.1186 17.277C25.0783 17.4804 24.9165 17.6378 24.7121 17.6725L17.6178 18.8793L14.0574 25.133C13.9548 25.3132 13.7516 25.4114 13.5466 25.3798C13.3417 25.3482 13.1775 25.1933 13.134 24.9905L9.51113 8.10489C9.46897 7.90837 9.54858 7.70571 9.71322 7.59042Z" fill="black" stroke="none"/>`,
+      translate: { x: 2, y: -1 },
+    },
+    key,
+  )}) 12 7, ${fallback}`;
 };

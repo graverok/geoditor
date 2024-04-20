@@ -1,6 +1,6 @@
 import * as mapboxgl from "mapbox-gl";
 import * as geojson from "geojson";
-import * as lib from "lib";
+import * as lib from "../../lib";
 import { Controller } from "../../core";
 import {
   Feature,
@@ -96,6 +96,7 @@ export class MapboxController extends Controller {
         ...item,
         id: (item.id as string).split(".").join("0"),
       });
+
       const collection = (this._features[type] ?? []).reduce(
         (acc, item) => {
           if (this._states[type]?.active?.includes(item.id as string))
@@ -312,16 +313,12 @@ export class MapboxController extends Controller {
   setCursor(value: string) {
     if (!this._map) return;
     const prev = this._map.getCanvas().style.cursor;
-    if (prev !== value) {
-      this._map.getCanvas().style.cursor = value;
-    }
+    if (prev !== value) this._map.getCanvas().style.cursor = value;
 
     return () => {
       if (!this._map) return;
       const current = this._map.getCanvas().style.cursor;
-      if (current !== prev) {
-        this._map.getCanvas().style.cursor = prev;
-      }
+      if (current !== prev) this._map.getCanvas().style.cursor = prev;
     };
   }
 
@@ -393,6 +390,12 @@ export class MapboxController extends Controller {
           },
         }) as geojson.Feature,
     );
+
+    const ids = this._features[type]?.map((f) => f.id) ?? [];
+    this._hovered[type] = this._hovered[type]?.filter((i) =>
+      ids.includes(`${i.nesting.map((x) => x + 1).join(".")}.`),
+    ) as any;
+
     this._requested[type] = true;
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "geoditor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "Aleksandr Gurianov",
     "url": "http://golova.pro"
@@ -23,7 +23,8 @@
     "mapbox",
     "editor",
     "geometry",
-    "geojson"
+    "geojson",
+    "map draw"
   ],
   "devDependencies": {
     "@babel/core": "^7.2.2",

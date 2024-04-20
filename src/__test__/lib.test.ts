@@ -164,6 +164,16 @@ test("lib.mutateFeature", () => {
     ...featureMultiPolygon,
     coordinates: [[coords1, coords2], [coords3], [insertion]],
   });
+  expect(lib.mutateFeature(featureLine, [0], coords1, ["MultiLineString"])).toEqual({
+    type: "MultiLineString",
+    nesting: [0],
+    coordinates: [coords1],
+  });
+  expect(lib.mutateFeature(featurePolygon, [0], coords1, ["MultiPolygon"])).toEqual({
+    type: "MultiPolygon",
+    nesting: [0],
+    coordinates: [[coords1]],
+  });
 });
 
 test("lib.array.equal", () => {

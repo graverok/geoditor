@@ -73,20 +73,20 @@ export const defaultConfig: LayerConfig[] = [
     type: "line",
     paint: {
       default: {
-        "line-width": 1.6,
+        "line-width": 2,
         "line-color": ["get", "color"],
         "line-opacity": 0.7,
       },
       disabled: {
-        "line-width": 1,
+        "line-width": 1.2,
         "line-opacity": 0.4,
       },
       hover: {
-        "line-width": 2,
+        "line-width": 2.4,
         "line-opacity": 1,
       },
       active: {
-        "line-width": 2,
+        "line-width": 2.4,
         "line-opacity": 1,
       },
     },
@@ -101,18 +101,18 @@ export const defaultConfig: LayerConfig[] = [
       default: {
         "circle-stroke-color": ["get", "color"],
         "circle-color": "#FFFFFF",
-        "circle-radius": 2,
-        "circle-stroke-width": 1.5,
+        "circle-radius": 2.2,
+        "circle-stroke-width": 1.8,
       },
       disabled: {
-        "circle-radius": 1.5,
+        "circle-radius": 1.8,
         "circle-stroke-width": 1,
         "circle-color": ["get", "color"],
       },
       hover: {
         "circle-radius": 2.6,
         "circle-color": "#FFFFFF",
-        "circle-stroke-width": 1.7,
+        "circle-stroke-width": 2,
       },
       active: {
         "circle-stroke-color": "#FFFFFF",

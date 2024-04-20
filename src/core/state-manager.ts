@@ -15,11 +15,11 @@ export class StateManager {
 
   public set(key: LayerState, next: (number | number[])[]) {
     const add = next.reduce(
-      (acc, n) => (this._state[key].some((x) => lib.array.equal(n, x)) ? acc : [...acc, lib.array.arrify(n)]),
+      (acc, n) => (this._state[key].some((x) => lib.array.equal(n, x)) ? acc : [...acc, lib.array.array(n)]),
       [] as number[][],
     );
     const remove = this._state[key].reduce(
-      (acc, n) => (next.some((x) => lib.array.equal(n, x)) ? acc : [...acc, lib.array.arrify(n)]),
+      (acc, n) => (next.some((x) => lib.array.equal(n, x)) ? acc : [...acc, lib.array.array(n)]),
       [] as number[][],
     );
 
@@ -41,25 +41,27 @@ export class StateManager {
     this._state[key] = [...this._state[key], ...added];
     this._callback(
       key,
-      added.map((n) => lib.array.arrify(n)),
+      added.map((n) => lib.array.array(n)),
       [],
     );
   }
 
   public remove(key: LayerState, remove: (number | number[])[]) {
-    const removed = remove.filter((n) => this._state[key].some((x) => lib.array.equal(n, x)));
+    const removed = this._state[key].filter((n) =>
+      remove.some((x) => lib.array.equal(n, x) || lib.array.equal(lib.array.plain(n), x)),
+    );
     this._state[key] = this._state[key].filter((n) => !removed.some((r) => lib.array.equal(n, r)));
     this._callback(
       key,
       [],
-      removed.map((n) => lib.array.arrify(n)),
+      removed.map((n) => lib.array.array(n)),
     );
   }
 
   public refresh(key: LayerState) {
     this._callback(
       key,
-      this._state[key].map((n) => lib.array.arrify(n)),
+      this._state[key].map((n) => lib.array.array(n)),
       [],
     );
   }

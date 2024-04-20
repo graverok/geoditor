@@ -1,17 +1,14 @@
 import { Core } from "./core";
 
 export class AnyTool {
-  protected _name!: string;
-  public core: Core;
+  public core!: Core;
+  readonly config: any;
 
-  constructor(core: Core) {
+  constructor(config?: any) {
+    this.config = config;
+  }
+  public init(core: Core) {
     this.core = core;
-  }
-  get name() {
-    return this._name;
-  }
-  get config(): unknown {
-    return;
   }
   public enable(...args: any[]) {}
   public disable() {}
