@@ -87,6 +87,10 @@ const selected: number[] = geoditor.selected;
 geoditor.selected = [0];
 geoditor.selected = [0, 1, 2];
 
+// Select feature's shape
+geoditor.selected = [[0]]
+geoditor.selected = [[1, 0]] 
+
 // Remove selection
 geoditor.selected = [];
 ```
@@ -119,7 +123,11 @@ geoditor.on("change", (data: GeoJSON.Feature[]) => {
 Fires on selected features change. Array of selected indices is passed into listener.
 ```ts
 geoditor.on("select", (selected: number[]) => {
-  // selected === geoditor.selected
+  /* 
+    selected !== geoditor.selected
+    selected: number[] includes only indices of selected features
+    geoditor.selected: (number | number[])[] returns selected shapes of features (if any)
+   */
   console.log(selected, geoditor.selected);
 });
 ```
