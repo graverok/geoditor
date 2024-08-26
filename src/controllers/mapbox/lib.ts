@@ -71,20 +71,20 @@ export function addMouseDownHandler(
   mapLayer: string,
   callback: SourceEventHandler,
 ) {
-  let isDragPan: boolean;
-  let isBoxZoom: boolean;
+  let hasDragPan: boolean;
+  let hasBoxZoom: boolean;
 
   const handler = (e: mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent) => {
-    isDragPan = Boolean(map?.dragPan.isEnabled());
-    isDragPan && map?.dragPan.disable();
-    isBoxZoom = Boolean(map?.boxZoom.isEnabled());
-    isBoxZoom && map?.boxZoom.disable();
+    hasDragPan = Boolean(map?.dragPan.isEnabled());
+    hasDragPan && map?.dragPan.disable();
+    hasBoxZoom = Boolean(map?.boxZoom.isEnabled());
+    hasBoxZoom && map?.boxZoom.disable();
     callback(eventLayerParser(layer)(e, collection));
     document.addEventListener(
       "mouseup",
       () => {
-        isDragPan && map?.dragPan.enable();
-        isBoxZoom && map?.boxZoom.enable();
+        hasDragPan && map?.dragPan.enable();
+        hasBoxZoom && map?.boxZoom.enable();
       },
       { once: true },
     );
@@ -201,7 +201,7 @@ export const removeSource = (map: mapboxgl.Map | undefined, { id, layers, areaLa
   if (!map) return;
   areaLayer && map.getLayer(id) && map.removeLayer(id);
   layers.forEach(
-    (layer: Omit<mapboxgl.Layer, "id">, index: number) =>
+    (_: Omit<mapboxgl.Layer, "id">, index: number) =>
       map?.getLayer(`${id}-${index + 1}`) && map?.removeLayer(`${id}-${index + 1}`),
   );
   map.getSource(id) && map.removeSource(id);

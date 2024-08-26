@@ -46,7 +46,7 @@ export class MapboxController extends Controller {
   constructor(id: number | string, map: mapboxgl.Map);
   constructor(map: mapboxgl.Map, options: Options);
   constructor(map: mapboxgl.Map);
-  constructor(...params: any[]) {
+  constructor(...params: unknown[]) {
     const [id, map, options] =
       typeof params[0] === "number" || typeof params[0] === "string"
         ? ([params[0], params[1], params[2]] as [number | string, mapboxgl.Map, Options | undefined])
@@ -86,7 +86,7 @@ export class MapboxController extends Controller {
       this._onInit?.();
     };
 
-    map.isStyleLoaded() ? init() : map.on("styledataloading", init);
+    map.isStyleLoaded() ? init() : map.on("load", () => init());
   }
 
   private _handleRender() {
@@ -156,7 +156,10 @@ export class MapboxController extends Controller {
   }
 
   private _handlePointMouseMove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
-    this._hovered.points = sortPointsByDistance(e.features ?? ([] as any), e.lngLat.toArray()).map((f) => {
+    this._hovered.points = sortPointsByDistance(
+      (e.features ?? []) as unknown as geojson.Feature<geojson.Point, LayerFeatureProperties>[],
+      e.lngLat.toArray(),
+    ).map((f) => {
       const { nesting, ...rest } = f.properties as LayerFeatureProperties;
       return {
         coordinates: (f.geometry as geojson.Point).coordinates,
@@ -217,7 +220,7 @@ export class MapboxController extends Controller {
   private _addMapListener(
     name: keyof mapboxgl.MapEventType,
     callback: SourceEventHandler,
-    options: SourceEventOptions,
+    options?: SourceEventOptions,
   ) {
     const handler = (e: mapboxgl.MapMouseEvent) => {
       callback(eventMapParser(e, this._hovered));
@@ -288,7 +291,11 @@ export class MapboxController extends Controller {
       | [keyof mapboxgl.MapEventType, SourceEventHandler, SourceEventOptions]
   ) {
     if (typeof params[1] === "function") {
-      const [name, callback, options] = params as [keyof mapboxgl.MapEventType, SourceEventHandler, SourceEventOptions];
+      const [name, callback, options] = params as [
+        keyof mapboxgl.MapEventType,
+        SourceEventHandler,
+        SourceEventOptions | undefined,
+      ];
       this._addMapListener(name, callback, options);
     } else {
       const [name, layer, callback] = params as [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler];
@@ -425,7 +432,7 @@ export class MapboxController extends Controller {
     this._toFeatures(
       "lines",
       (items as Feature[]).reduce((acc, item) => {
-        let res: Line[] = [];
+        const res: Line[] = [];
         lib.traverseCoordinates(item, (positions, indices) => {
           res.push({
             coordinates: positions,
@@ -443,11 +450,8 @@ export class MapboxController extends Controller {
   }
 
   onInit(callback: () => void) {
-    if (this._map) {
-      callback();
-    } else {
-      this._onInit = callback;
-    }
+    if (this._map) return callback();
+    this._onInit = callback;
   }
 
   public remove() {

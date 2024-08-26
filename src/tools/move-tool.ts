@@ -159,7 +159,7 @@ export class MoveTool extends AnyTool {
 
   private _handlePointDrag(e: SourceEvent) {
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
-    let point = e.points[0];
+    const point = e.points[0];
     let feature = this.core.getFeatures([point?.nesting[0]])[0];
     if (!point || !feature) return;
 
@@ -315,6 +315,10 @@ export class MoveTool extends AnyTool {
     this.core.removeListener("mousemove", this._handleFeatureHover);
     this.core.removeListener("mouseout", this._handleCanvasLeave);
     this._stored.cursor?.();
+  }
+
+  delete() {
+    return;
   }
 }
 

@@ -127,7 +127,7 @@ export const generateLayers = (config: LayerConfig[]): Omit<mapboxgl.Layer, "id"
     const paintKeys = Object.keys(item.paint.default);
 
     return {
-      type: item.type as any,
+      type: item.type,
       paint: (paintKeys as (keyof mapboxgl.AnyPaint)[]).reduce(
         (
           acc: mapboxgl.AnyPaint | mapboxgl.AnyLayout,

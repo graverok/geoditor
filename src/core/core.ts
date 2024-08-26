@@ -160,7 +160,7 @@ const updateSelected = (features: Feature[], active: (number | number[])[]) => {
     }
     if (typeof n === "number") return acc;
 
-    let counts: number[] = [];
+    const counts: number[] = [];
     traverseCoordinates(feature, (_, indices) => {
       indices.forEach((x, i) => {
         counts[i] = typeof counts[i] === "number" ? Math.max(counts[i], x) : x;

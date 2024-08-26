@@ -7,7 +7,7 @@ export type LayerType = "points" | "lines" | "planes";
 export type LayerState = "disabled" | "hover" | "active";
 export type FeatureProps = {
   color?: string;
-} & Record<string, any>;
+} & Record<string, unknown>;
 
 export type Feature<
   T = geojson.LineString | geojson.Polygon | geojson.MultiLineString | geojson.MultiPolygon,

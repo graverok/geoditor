@@ -27,7 +27,7 @@ export class Geoditor {
   private readonly _core: Core;
   private readonly _controller: Controller;
   private _isLoaded = false;
-  private _selected: number[] = [];
+  private _selected: (number | number[])[] = [];
   private _listeners: {
     load: (() => void)[];
     select: ((selected: number[]) => void)[];
@@ -64,10 +64,9 @@ export class Geoditor {
     this._core = new Core({
       controller: config.controller,
       onSelect: (next: (number | number[])[]) => {
-        const _selected = next.map(lib.array.plain);
-        if (lib.array.equal(this._selected, _selected)) return;
-        this._selected = _selected;
-        this._listeners.select.forEach((f) => f(this._selected));
+        if (lib.array.equal(this._selected, next)) return;
+        this._selected = next;
+        this._listeners.select.forEach((f) => f(this._selected.map(lib.array.plain)));
       },
       onChange: () => {
         this._listeners.change.forEach((f) => f(this.data));
@@ -77,7 +76,7 @@ export class Geoditor {
     this._controller = config.controller;
     this._tools = config?.tools ?? defaultTools;
     Object.values(this._tools).forEach((t) => t.init(this._core));
-    config.controller.onInit(() => this._onInit());
+    this._controller.onInit(() => this._onInit());
   }
 
   set data(data) {
@@ -93,7 +92,7 @@ export class Geoditor {
     return this._selected;
   }
 
-  set selected(next: number[]) {
+  set selected(next: (number | number[])[]) {
     if (lib.array.equal(next, this._selected)) return;
     this._selected = next;
     this._core.state.features.set("active", this._selected);
@@ -131,7 +130,7 @@ export class Geoditor {
 
   public remove() {
     this.tool && this._tools[this.tool]?.disable();
-    this.tool = undefined;
+    this._controller.remove();
     this._core.remove();
   }
 }

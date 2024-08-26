@@ -2,7 +2,7 @@ import { Feature, LayerType, Point, SourceEventOptions, SourceEventHandler, Laye
 
 type AddListenerParams =
   | [string, SourceEventHandler]
-  | [string, SourceEventHandler, SourceEventOptions | undefined]
+  | [string, SourceEventHandler, SourceEventOptions]
   | [string, LayerType, SourceEventHandler];
 type RemoveListenerParams = [string, SourceEventHandler] | [string, LayerType, SourceEventHandler];
 

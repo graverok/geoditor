@@ -17,7 +17,7 @@ export class PenTool extends AnyTool {
     feature?: Feature;
     reversed?: boolean;
     event?: SourceEvent;
-    props?: Record<string, any>;
+    props?: Record<string, unknown>;
     nesting?: number[];
   } = {
     modes: {},
@@ -49,7 +49,7 @@ export class PenTool extends AnyTool {
   }
 
   private _getShapeGeometry(next?: Position) {
-    let shape = this._state.feature
+    const shape = this._state.feature
       ? lib.toPositions(lib.getCoordinates(this._state.feature, this._state.nesting ?? []), this._state.feature.type)
       : [];
     return this._state.reversed
@@ -96,7 +96,7 @@ export class PenTool extends AnyTool {
 
   private _render(next?: Position, hover?: Point) {
     if (!this._state.geometry || !this._state.nesting) return;
-    let _geometry = this._getShapeGeometry();
+    const _geometry = this._getShapeGeometry();
     const _next = next ? (this._state.reversed ? [next, ..._geometry] : [..._geometry, next]) : _geometry;
     const _props = this._state.feature ? this._state.feature.props : this._state.props;
 
@@ -161,11 +161,11 @@ export class PenTool extends AnyTool {
               ? "line"
               : "polygon",
             "pointer",
-            this._state.props?.color,
+            this._state.props?.color?.toString(),
           ),
         );
       } else {
-        this.core.setCursor(generateCursor("default", "crosshair", this._state.props?.color));
+        this.core.setCursor(generateCursor("default", "crosshair", this._state.props?.color?.toString()));
       }
 
       !point && this._render(e.position);
@@ -177,7 +177,7 @@ export class PenTool extends AnyTool {
     if (this._state.modes.extend) {
       const point = e.points.find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
       if (point) {
-        return this.core.setCursor(generateCursor("extend", "crosshair", this._state.props?.color));
+        return this.core.setCursor(generateCursor("extend", "crosshair", this._state.props?.color?.toString()));
       }
     }
 
@@ -187,15 +187,15 @@ export class PenTool extends AnyTool {
       this.core.state.points.set("hover", []);
       if (plane) {
         this.core.state.features.set("hover", [plane.nesting]);
-        return this.core.setCursor(generateCursor("minus", "crosshair", this._state.props?.color));
+        return this.core.setCursor(generateCursor("minus", "crosshair", this._state.props?.color?.toString()));
       }
     }
 
     if (this._state.modes.create)
-      return this.core.setCursor(generateCursor("default", "crosshair", this._state.props?.color));
+      return this.core.setCursor(generateCursor("default", "crosshair", this._state.props?.color?.toString()));
     if (this._state.modes.append)
-      return this.core.setCursor(generateCursor("plus", "crosshair", this._state.props?.color));
-    return this.core.setCursor(generateCursor("disabled", "not-allowed", this._state.props?.color));
+      return this.core.setCursor(generateCursor("plus", "crosshair", this._state.props?.color?.toString()));
+    return this.core.setCursor(generateCursor("disabled", "not-allowed", this._state.props?.color?.toString()));
   }
 
   private _handleCanvasClick(e: SourceEvent) {
@@ -240,7 +240,7 @@ export class PenTool extends AnyTool {
         generateCursor(
           this._getRenderType() === "LineString" ? "line" : "polygon",
           "pointer",
-          this._state.props?.color,
+          this._state.props?.color?.toString(),
         ),
       );
       return;
@@ -300,7 +300,7 @@ export class PenTool extends AnyTool {
   }
 
   private _handlePointMouseEnter(e: SourceEvent) {
-    let point = e.points.find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+    const point = e.points.find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
     if (!point) return;
 
     const _onMove = (ev: SourceEvent) => {
@@ -389,12 +389,13 @@ export class PenTool extends AnyTool {
           metaKey: state.metaKey ?? false,
         },
       });
+    return;
   }
 
   private _finish(selected?: (number | number[])[]) {
     if (!this._state.nesting) return this.core.state.features.set("active", selected ?? this._stored.active);
 
-    let _geometry = this._getShapeGeometry();
+    const _geometry = this._getShapeGeometry();
     this._state.geometry = undefined;
 
     if (Number(this._getRenderType(true, false) === "LineString") + _geometry.length < 3) {
@@ -434,16 +435,20 @@ export class PenTool extends AnyTool {
     this._isolate({});
   }
 
-  public enable(props?: Record<string, any>) {
+  public enable(props?: Record<string, unknown>) {
     if (!this.config.drawTypes.length) {
       this.core.isolateFeatures([]);
-      this._stored.cursor = this.core.setCursor(generateCursor("disabled", "not-allowed", this._state.props?.color));
+      this._stored.cursor = this.core.setCursor(
+        generateCursor("disabled", "not-allowed", this._state.props?.color?.toString()),
+      );
       this.core.render("points", []);
       return;
     }
 
     this._state.props = props;
-    this._stored.cursor = this.core.setCursor(generateCursor("default", "crosshair", this._state.props?.color));
+    this._stored.cursor = this.core.setCursor(
+      generateCursor("default", "crosshair", this._state.props?.color?.toString()),
+    );
     this.refresh();
 
     this.core.addListener("mouseenter", "points", this._handlePointMouseEnter);
@@ -456,7 +461,7 @@ export class PenTool extends AnyTool {
   }
 
   public delete(indices: number[]): boolean | void {
-    if (!this._state.geometry) return false;
+    if (!this._state.geometry) return;
 
     if (indices.map(lib.array.plain).includes(this.core.features.length)) {
       if (indices.length === 1) {
@@ -467,11 +472,11 @@ export class PenTool extends AnyTool {
       }
 
       this._reset();
-      return false;
+      return;
     }
 
     if (this._state.feature) this._reset();
-    return false;
+    return;
   }
 
   public disable() {
