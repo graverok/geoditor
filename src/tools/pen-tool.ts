@@ -205,9 +205,8 @@ export class PenTool extends AnyTool {
       if (this._state.geometry) {
         const feature = this._mutateFeature(this._getShapeGeometry(), point) as Feature;
         this.core.state.points.remove("hover", [point.nesting]);
-        if (!this._stored.active.some((n) => Array.isArray(n))) {
+        if (!this._stored.active.some((n) => Array.isArray(n)))
           this.core.state.features.set("active", this.core.state.features.get("active").map(lib.array.plain));
-        }
         this._reset();
         this.core.features = [
           ...this.core.features.slice(0, feature.nesting[0]),
@@ -416,7 +415,7 @@ export class PenTool extends AnyTool {
   public refresh() {
     if (this._state.geometry) {
       const active = this.core.state.features.get("active");
-      if (active.length && !active.map(lib.array.plain).includes(lib.array.plain(this._state.nesting ?? []))) {
+      if (active.length && !active.map(lib.array.plain).includes(this._state.nesting[0])) {
         this._finish(active);
         this._reset();
         this._isolate({});
@@ -424,8 +423,9 @@ export class PenTool extends AnyTool {
       }
 
       if (!this._state.feature) {
-        this.core.state.features.set("active", [this.core.features.length]);
         this.core.isolateFeatures([this.core.features.length]);
+        if (active.length && !active.map(lib.array.plain).includes(this.core.features.length))
+          this.core.state.features.set("active", [this.core.features.length]);
 
         return this._render();
       }
