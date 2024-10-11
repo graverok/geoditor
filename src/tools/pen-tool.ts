@@ -415,7 +415,7 @@ export class PenTool extends AnyTool {
   public refresh() {
     if (this._state.geometry) {
       const active = this.core.state.features.get("active");
-      if (active.length && !active.map(lib.array.plain).includes(this._state.nesting[0])) {
+      if (active.length && !active.map(lib.array.plain).includes(lib.array.plain(this._state.nesting ?? []))) {
         this._finish(active);
         this._reset();
         this._isolate({});
