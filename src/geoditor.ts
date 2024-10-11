@@ -5,11 +5,11 @@ import * as lib from "./lib";
 import * as geojson from "geojson";
 
 type Tools = {
-  move: MoveTool["enable"];
-  pen: PenTool["enable"];
+  move: (...args: Parameters<MoveTool["enable"]>) => AnyTool["subscriber"];
+  pen: (...args: Parameters<PenTool["enable"]>) => AnyTool["subscriber"];
   delete: (indices?: number[]) => void;
   off: () => void;
-} & Record<string, AnyTool["enable"]>;
+} & Record<string, (...args: Parameters<AnyTool["enable"]>) => AnyTool["subscriber"]>;
 
 const defaultTools = {
   move: new MoveTool(),
@@ -34,25 +34,6 @@ export class Geoditor {
     change: ((data: geojson.Feature[]) => void)[];
   } = { load: [], select: [], change: [] };
 
-  public on(name: "load", callback: () => void): void;
-  public on(name: "select", callback: (selected: number[]) => void): void;
-  public on(name: "change", callback: (data: geojson.Feature[]) => void): void;
-  public on(name: "load" | "select" | "change", callback: (...args: any) => void) {
-    if (this._listeners[name].find((f) => f === callback)) return;
-    this._listeners[name].push(callback);
-    name === "load" && this._isLoaded && callback();
-  }
-
-  public off(name: "load", callback: () => void): void;
-  public off(name: "select", callback: (selected: number[]) => void): void;
-  public off(name: "change", callback: (data: geojson.Feature[]) => void): void;
-  public off(name: "load" | "select" | "change", callback: (...args: any) => void) {
-    this._listeners = {
-      ...this._listeners,
-      [name]: this._listeners[name].filter((f) => f !== callback),
-    };
-  }
-
   constructor(config: Config) {
     this._core = new Core({
       controller: config.controller,
@@ -70,6 +51,25 @@ export class Geoditor {
     this._tools = config?.tools ?? defaultTools;
     Object.values(this._tools).forEach((t) => t.init(this._core));
     this._controller.onInit(() => this._onInit());
+  }
+
+  public on(name: "load", callback: () => void): void;
+  public on(name: "select", callback: (selected: number[]) => void): void;
+  public on(name: "change", callback: (data: geojson.Feature[]) => void): void;
+  public on(name: "load" | "select" | "change", callback: (...args: any) => void) {
+    if (this._listeners[name].find((f) => f === callback)) return;
+    this._listeners[name].push(callback);
+    name === "load" && this._isLoaded && callback();
+  }
+
+  public off(name: "load", callback: () => void): void;
+  public off(name: "select", callback: (selected: number[]) => void): void;
+  public off(name: "change", callback: (data: geojson.Feature[]) => void): void;
+  public off(name: "load" | "select" | "change", callback: (...args: any) => void) {
+    this._listeners = {
+      ...this._listeners,
+      [name]: this._listeners[name].filter((f) => f !== callback),
+    };
   }
 
   set data(data) {
@@ -101,12 +101,12 @@ export class Geoditor {
       (tools, key) => ({
         ...tools,
         [key]: (...args: Parameters<Tools[typeof key]>) => {
-          if (this._tool === key) return;
           const current = this._tool;
           this._tool = undefined;
           current && this._tools[current]?.disable();
           this._tool = key;
           this._isLoaded && this._tools[key]?.enable(...args);
+          return this._tools[key].subscriber;
         },
       }),
       {

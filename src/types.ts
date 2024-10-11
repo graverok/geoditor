@@ -1,7 +1,7 @@
 import * as geojson from "geojson";
 
 export type Position = number[];
-
+export type EventType = "hover" | "click";
 export type DrawType = "LineString" | "Polygon" | "MultiLineString" | "MultiPolygon";
 export type LayerType = "points" | "lines" | "planes";
 export type LayerState = "disabled" | "hover" | "active";
@@ -18,22 +18,27 @@ export type Feature<
 };
 
 export type Point = {
+  type: geojson.Point["type"];
   nesting: number[];
   coordinates: Position;
   props?: FeatureProps;
 };
 
 export type Line = {
+  type: geojson.LineString["type"];
   nesting: number[];
   coordinates: Position[];
   props?: FeatureProps;
 };
 
 export type Plane = {
+  type: geojson.Polygon["type"];
   nesting: number[];
   coordinates: Position[][];
   props?: FeatureProps;
 };
+
+export type Shape = Point | Line | Plane;
 
 export interface SourceEvent<O extends MouseEvent | TouchEvent = MouseEvent> {
   position: Position;
@@ -46,3 +51,4 @@ export interface SourceEvent<O extends MouseEvent | TouchEvent = MouseEvent> {
 
 export type SourceEventHandler = (e: SourceEvent) => void;
 export type SourceEventOptions = { once?: boolean };
+export type TestHandler = (shape: Shape) => boolean | void;

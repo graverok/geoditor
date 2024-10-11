@@ -1,5 +1,7 @@
-import { Feature, Position, Point, DrawType } from "./types";
+import { Feature, Position, Point, DrawType, EventType } from "./types";
 import * as geojson from "geojson";
+
+export const getEventTypes = (): EventType[] => ["hover", "click"];
 
 const getCoordinates = (feature: Feature | undefined, nesting: number[]): Position[] => {
   if (!feature) return [];
@@ -157,6 +159,7 @@ const createPoints = (features: Feature[], active?: (number | number[])[]) => {
       traverseCoordinates(feature, (positions, indices) => {
         toPositions(positions, feature.type).forEach((position, index) => {
           acc.push({
+            type: "Point",
             coordinates: position,
             nesting: [...indices, index],
             props: feature.props,
@@ -175,6 +178,7 @@ const createPoints = (features: Feature[], active?: (number | number[])[]) => {
       if (Array.isArray(nesting) && !array.equal(indices.slice(0, nesting.length), nesting)) return;
       toPositions(positions, feature.type).forEach((position, index) => {
         acc.push({
+          type: "Point",
           coordinates: position,
           nesting: [...indices, index],
           props: feature.props,

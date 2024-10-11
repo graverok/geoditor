@@ -129,6 +129,7 @@ export class MapboxController extends Controller {
     this._hovered.planes = (e.features || []).map((f) => {
       const { nesting, ...rest } = f.properties as LayerFeatureProperties;
       return {
+        type: "Polygon",
         coordinates: (f.geometry as geojson.Polygon).coordinates,
         nesting: JSON.parse(nesting),
         props: rest,
@@ -144,6 +145,7 @@ export class MapboxController extends Controller {
     this._hovered.lines = (e.features || []).map((f) => {
       const { nesting, ...rest } = f.properties as LayerFeatureProperties;
       return {
+        type: "LineString",
         coordinates: (f.geometry as geojson.LineString).coordinates,
         nesting: JSON.parse(nesting),
         props: rest,
@@ -162,6 +164,7 @@ export class MapboxController extends Controller {
     ).map((f) => {
       const { nesting, ...rest } = f.properties as LayerFeatureProperties;
       return {
+        type: "Point",
         coordinates: (f.geometry as geojson.Point).coordinates,
         nesting: JSON.parse(nesting),
         props: rest,
@@ -417,11 +420,15 @@ export class MapboxController extends Controller {
           case "MultiPolygon":
             return [
               ...acc,
-              ...item.coordinates.map((coords, index) => ({
-                ...item,
-                coordinates: coords,
-                nesting: [...item.nesting, index],
-              })),
+              ...item.coordinates.map(
+                (coords, index) =>
+                  ({
+                    ...item,
+                    type: "Polygon",
+                    coordinates: coords,
+                    nesting: [...item.nesting, index],
+                  }) as Plane,
+              ),
             ];
           default:
             return acc;
@@ -435,6 +442,7 @@ export class MapboxController extends Controller {
         const res: Line[] = [];
         lib.traverseCoordinates(item, (positions, indices) => {
           res.push({
+            type: "LineString",
             coordinates: positions,
             nesting: [...indices],
             props: item.props,

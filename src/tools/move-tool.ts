@@ -17,7 +17,7 @@ export class MoveTool extends AnyTool {
   }
 
   private _renderPoints() {
-    const points = lib.createPoints(this.core.features, this.core.state.features.get("active"));
+    const points = lib.createPoints(this.core.features, this.core.state.features.get("active")).filter(this.filter);
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) {
       this.core.state.points.add(
         "disabled",
@@ -25,7 +25,9 @@ export class MoveTool extends AnyTool {
       );
       this.core.render("points", points);
     } else {
-      const middlePoints = createMiddlePoints(this.core.features, this.core.state.features.get("active"));
+      const middlePoints = createMiddlePoints(this.core.features, this.core.state.features.get("active")).filter(
+        this.filter,
+      );
       this.core.state.points.add(
         "disabled",
         middlePoints.map((p) => p.nesting),
@@ -44,7 +46,9 @@ export class MoveTool extends AnyTool {
 
   private _handleFeatureHover(e: SourceEvent) {
     if (this._state.dragging) return;
-    let shapes = [...e.points, ...e.lines, ...e.planes].map((f) => f.nesting);
+    let shapes = [...e.points.filter(this.filter), ...e.lines.filter(this.filter), ...e.planes.filter(this.filter)].map(
+      (f) => f.nesting,
+    );
 
     if (this.core.state.features.get("active").every((n) => typeof n === "number")) {
       this.core.setCursor(shapes.length ? generateCursor("default", "pointer") : "default");
@@ -66,6 +70,7 @@ export class MoveTool extends AnyTool {
   }
 
   private _handleFeatureDeselect(e: SourceEvent) {
+    // Need testing?
     const indices = [...e.points, ...e.lines, ...e.planes].map((f) => f.nesting[0]);
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) {
       if (indices.length) return;
@@ -80,8 +85,12 @@ export class MoveTool extends AnyTool {
   }
 
   private _handleGeometryMouseDown(e: SourceEvent) {
-    if (e.points.length && !this.core.state.features.get("active").some((n) => typeof n === "number")) return;
-    if (e.layer === "planes" && e.lines.length) return;
+    if (
+      e.points.filter(this.filter).length &&
+      !this.core.state.features.get("active").some((n) => typeof n === "number")
+    )
+      return;
+    if (e.layer === "planes" && e.lines.filter(this.filter).length) return;
     const geometry = e[e.layer as LayerType][0];
     if (!geometry) return;
 
@@ -112,7 +121,10 @@ export class MoveTool extends AnyTool {
         );
       });
       this.core.render("features", features);
-      this.core.render("points", lib.createPoints(features, this.core.state.features.get("active")));
+      this.core.render(
+        "points",
+        lib.createPoints(features, this.core.state.features.get("active")).filter(this.filter),
+      );
     };
 
     const _onFinish = () => {
@@ -137,7 +149,8 @@ export class MoveTool extends AnyTool {
 
   private _handlePointHover(e: SourceEvent) {
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
-    let point = e.points[0];
+    let point = e.points.filter(this.filter)[0];
+    if (!point) return;
     !this._state.dragging && this.core.state.points.set("hover", [point.nesting]);
 
     const _onMove = (ev: SourceEvent) => {
@@ -159,7 +172,7 @@ export class MoveTool extends AnyTool {
 
   private _handlePointDrag(e: SourceEvent) {
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
-    const point = e.points[0];
+    const point = e.points.filter(this.filter)[0];
     let feature = this.core.getFeatures([point?.nesting[0]])[0];
     if (!point || !feature) return;
 
@@ -226,7 +239,10 @@ export class MoveTool extends AnyTool {
         feature,
         ...this.core.features.slice(point.nesting[0] + 1),
       ]);
-      this.core.render("points", lib.createPoints([feature], this.core.state.features.get("active")));
+      this.core.render(
+        "points",
+        lib.createPoints([feature], this.core.state.features.get("active")).filter(this.filter),
+      );
     };
 
     const _onFinish = () => {
@@ -309,6 +325,7 @@ export class MoveTool extends AnyTool {
   }
 
   public disable() {
+    super.disable();
     this.core.removeListener("mousedown", "points", this._handlePointDrag);
     this.core.removeListener("mouseenter", "points", this._handlePointHover);
     this.core.removeListener("mousedown", "planes", this._handleGeometryMouseDown);
@@ -334,6 +351,7 @@ const createMiddlePoints = (features: Feature[], focused: (number | number[])[])
       const startIndex = lib.toPositions(positions, feature.type).length;
       positions.slice(1).forEach((position, index) => {
         acc.push({
+          type: "Point",
           coordinates: lib.coordinates.normalize(lib.coordinates.average(position, positions[index])),
           nesting: [...indices, startIndex + index],
           props: feature.props,

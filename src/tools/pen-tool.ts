@@ -132,15 +132,21 @@ export class PenTool extends AnyTool {
       ]);
     }
 
-    this.core.render("points", [
-      ...(next ? [{ nesting: [...this._state.nesting, -1], coordinates: next, props: _props }] : []),
-      { nesting: [...this._state.nesting, 0], coordinates: _geometry[0], props: _props },
-      {
-        nesting: [...this._state.nesting, _geometry.length - 1],
-        coordinates: _geometry[_geometry.length - 1],
-        props: _props,
-      },
-    ]);
+    this.core.render(
+      "points",
+      (
+        [
+          ...(next ? [{ type: "Point", nesting: [...this._state.nesting, -1], coordinates: next, props: _props }] : []),
+          { type: "Point", nesting: [...this._state.nesting, 0], coordinates: _geometry[0], props: _props },
+          {
+            type: "Point",
+            nesting: [...this._state.nesting, _geometry.length - 1],
+            coordinates: _geometry[_geometry.length - 1],
+            props: _props,
+          },
+        ] as Point[]
+      ).filter(this.filter),
+    );
   }
 
   private _handleKeyPress(ev: KeyboardEvent) {
@@ -151,7 +157,9 @@ export class PenTool extends AnyTool {
     this._state.event = e;
 
     if (this._state.geometry) {
-      const point = e.points.find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+      const point = e.points
+        .filter(this.filter)
+        .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
       if (point) {
         this._render(undefined, point);
         this.core.setCursor(
@@ -175,7 +183,9 @@ export class PenTool extends AnyTool {
     this.core.state.features.set("hover", []);
 
     if (this._state.modes.extend) {
-      const point = e.points.find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+      const point = e.points
+        .filter(this.filter)
+        .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
       if (point) {
         return this.core.setCursor(generateCursor("extend", "crosshair", this._state.props?.color?.toString()));
       }
@@ -183,7 +193,7 @@ export class PenTool extends AnyTool {
 
     if (this._state.modes.subtract) {
       const disabled = this.core.state.features.get("disabled").map(lib.array.plain);
-      const plane = e.planes.find((p) => !disabled.includes(p.nesting[0]));
+      const plane = e.planes.filter(this.filter).find((p) => !disabled.includes(p.nesting[0]));
       this.core.state.points.set("hover", []);
       if (plane) {
         this.core.state.features.set("hover", [plane.nesting]);
@@ -199,7 +209,7 @@ export class PenTool extends AnyTool {
   }
 
   private _handleCanvasClick(e: SourceEvent) {
-    const point = e.points.find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+    const point = e.points.filter(this.filter).find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
 
     if (point) {
       if (this._state.geometry) {
@@ -247,7 +257,7 @@ export class PenTool extends AnyTool {
 
     const active = this.core.state.features.get("active").map(lib.array.plain);
     if (this._state.modes.subtract) {
-      const plane = e.planes.find((p) => active.includes(p.nesting[0]));
+      const plane = e.planes.filter(this.filter).find((p) => active.includes(p.nesting[0]));
       if (plane) {
         this._state.feature = this.core.getFeatures([plane.nesting[0]])[0];
         if (!this._state.feature) return;
@@ -299,7 +309,7 @@ export class PenTool extends AnyTool {
   }
 
   private _handlePointMouseEnter(e: SourceEvent) {
-    const point = e.points.find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+    const point = e.points.filter(this.filter).find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
     if (!point) return;
 
     const _onMove = (ev: SourceEvent) => {
@@ -319,7 +329,7 @@ export class PenTool extends AnyTool {
   }
 
   private _handlePointMouseDown(e: SourceEvent) {
-    const point = e.points.find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+    const point = e.points.filter(this.filter).find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
     if (!point) return;
     this.core.state.points.add("active", [point.nesting]);
     document.addEventListener("mouseup", () => this.core.state.points.remove("active", [point.nesting]), {
@@ -353,7 +363,7 @@ export class PenTool extends AnyTool {
       "active",
       this.core.state.features.get("active").filter((n) => _indices.includes(lib.array.plain(n))),
     );
-    this.core.render("points", lib.createPoints(this.core.features, _indices));
+    this.core.render("points", lib.createPoints(this.core.features, _indices).filter(this.filter));
     this.core.render("features", this.core.features);
 
     const points: Point[] = [];
@@ -364,8 +374,13 @@ export class PenTool extends AnyTool {
       if (!active.map(lib.array.plain).includes(feature.nesting[0])) return;
       lib.traverseCoordinates(feature, (p, indices) => {
         if (!this._state.modes.extend || lib.isPolygonLike(feature)) return;
-        points.push({ nesting: [...indices, 0], props: feature.props, coordinates: p[0] });
-        points.push({ nesting: [...indices, p.length - 1], props: feature.props, coordinates: p[p.length - 1] });
+        points.push({ type: "Point", nesting: [...indices, 0], props: feature.props, coordinates: p[0] });
+        points.push({
+          type: "Point",
+          nesting: [...indices, p.length - 1],
+          props: feature.props,
+          coordinates: p[p.length - 1],
+        });
       });
     });
     this.core.state.points.remove(
@@ -373,7 +388,7 @@ export class PenTool extends AnyTool {
       points.map((p) => p.nesting),
     );
     this.core.state.points.set("active", []);
-    this.core.render("points", points);
+    this.core.render("points", points.filter(this.filter));
 
     this.core.isolateFeatures(_indices.map(lib.array.array));
 
@@ -480,6 +495,7 @@ export class PenTool extends AnyTool {
   }
 
   public disable() {
+    super.disable();
     document.removeEventListener("keydown", this._handleKeyPress);
     document.removeEventListener("keyup", this._handleKeyPress);
     this.core.removeListener("mouseout", this._handleCanvasLeave);

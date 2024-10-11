@@ -7,7 +7,6 @@ export class StateManager {
     disabled: [],
     hover: [],
   };
-  private _callback: (key: LayerState, add: number[][], remove: number[][]) => void;
 
   constructor(callback: (key: LayerState, add: number[][], remove: number[][]) => void) {
     this._callback = callback;
@@ -65,4 +64,6 @@ export class StateManager {
       [],
     );
   }
+
+  private _callback: (key: LayerState, add: number[][], remove: number[][]) => void;
 }
