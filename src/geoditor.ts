@@ -22,8 +22,8 @@ type Config = {
 };
 
 export class Geoditor {
+  private _tool: string | undefined;
   private _tools!: Record<string, AnyTool>;
-  protected tool: string | undefined;
   private readonly _core: Core;
   private readonly _controller: Controller;
   private _isLoaded = false;
@@ -53,13 +53,6 @@ export class Geoditor {
     };
   }
 
-  private _onInit() {
-    this._isLoaded = true;
-    this._core.init();
-    this.tool && this._tools[this.tool]?.enable();
-    this._listeners.load.forEach((f) => f());
-  }
-
   constructor(config: Config) {
     this._core = new Core({
       controller: config.controller,
@@ -70,7 +63,7 @@ export class Geoditor {
       },
       onChange: () => {
         this._listeners.change.forEach((f) => f(this.data));
-        this.tool && this._tools[this.tool]?.refresh();
+        this._tool && this._tools[this._tool]?.refresh();
       },
     });
     this._controller = config.controller;
@@ -81,7 +74,7 @@ export class Geoditor {
 
   set data(data) {
     this._core.data = data;
-    this.tool && this._tools[this.tool]?.refresh();
+    this._tool && this._tools[this._tool]?.refresh();
   }
 
   get data() {
@@ -96,7 +89,11 @@ export class Geoditor {
     if (lib.array.equal(next, this._selected)) return;
     this._selected = next;
     this._core.state.features.set("active", this._selected);
-    this.tool && this._tools[this.tool]?.refresh();
+    this._tool && this._tools[this._tool]?.refresh();
+  }
+
+  get tool() {
+    return this._tool;
   }
 
   get tools() {
@@ -104,11 +101,11 @@ export class Geoditor {
       (tools, key) => ({
         ...tools,
         [key]: (...args: Parameters<Tools[typeof key]>) => {
-          if (this.tool === key) return;
-          const current = this.tool;
-          this.tool = undefined;
+          if (this._tool === key) return;
+          const current = this._tool;
+          this._tool = undefined;
           current && this._tools[current]?.disable();
-          this.tool = key;
+          this._tool = key;
           this._isLoaded && this._tools[key]?.enable(...args);
         },
       }),
@@ -116,12 +113,12 @@ export class Geoditor {
         delete: (indices?: number[]) => {
           const _deletion = indices || this._core.state.features.get("active");
           if (!_deletion.length) return;
-          if (this.tool && this._tools[this.tool]?.delete(_deletion)) return;
+          if (this._tool && this._tools[this._tool]?.delete(_deletion)) return;
           this._core.features = deleteFeatures(this._core.features, _deletion);
         },
         off: () => {
-          this.tool && this._tools[this.tool]?.disable();
-          this.tool = undefined;
+          this._tool && this._tools[this._tool]?.disable();
+          this._tool = undefined;
           this._core.reset();
         },
       } as Tools,
@@ -129,9 +126,16 @@ export class Geoditor {
   }
 
   public remove() {
-    this.tool && this._tools[this.tool]?.disable();
+    this._tool && this._tools[this._tool]?.disable();
     this._controller.remove();
     this._core.remove();
+  }
+
+  private _onInit() {
+    this._isLoaded = true;
+    this._core.init();
+    this._tool && this._tools[this._tool]?.enable();
+    this._listeners.load.forEach((f) => f());
   }
 }
 
