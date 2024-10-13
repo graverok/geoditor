@@ -89,91 +89,169 @@ export class MapboxController extends Controller {
     map.isStyleLoaded() ? init() : map.on("load", () => init());
   }
 
-  private _handleRender() {
-    (["points", "lines", "planes"] as LayerType[]).forEach((type) => {
-      if (!this._requested[type]) return;
-      const parse = (item: geojson.Feature) => ({
-        ...item,
-        id: (item.id as string).split(".").join("0"),
-      });
+  onInit(callback: () => void) {
+    if (this._map) return callback();
+    this._onInit = callback;
+  }
 
-      const collection = (this._features[type] ?? []).reduce(
-        (acc, item) => {
-          if (this._states[type]?.active?.includes(item.id as string))
-            return { ...acc, active: [...acc.active, parse(item)] };
-          if (this._states[type]?.hover?.includes(item.id as string))
-            return { ...acc, hover: [...acc.hover, parse(item)] };
-          if (this._states[type]?.disabled?.includes(item.id as string))
-            return { ...acc, disabled: [...acc.disabled, parse(item)] };
-          return { ...acc, default: [...acc.default, parse(item)] };
-        },
-        {
-          disabled: [],
-          default: [],
-          hover: [],
-          active: [],
-        } as Record<LayerState | "default", geojson.Feature[]>,
+  addListener(
+    ...params:
+      | [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler]
+      | [keyof mapboxgl.MapEventType, SourceEventHandler]
+      | [keyof mapboxgl.MapEventType, SourceEventHandler, SourceEventOptions]
+  ) {
+    if (typeof params[1] === "function") {
+      const [name, callback, options] = params as [
+        keyof mapboxgl.MapEventType,
+        SourceEventHandler,
+        SourceEventOptions | undefined,
+      ];
+      this._addMapListener(name, callback, options);
+    } else {
+      const [name, layer, callback] = params as [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler];
+      this._addLayerListener(name, layer, callback);
+    }
+  }
+
+  removeListener(
+    ...params:
+      | [keyof mapboxgl.MapEventType, SourceEventHandler]
+      | [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler]
+  ) {
+    if (typeof params[1] === "function") {
+      const [name, callback] = params as [keyof mapboxgl.MapEventType, SourceEventHandler];
+      this._removeSubscription({ name, callback });
+    } else {
+      const [name, layer, callback] = params as [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler];
+      this._removeSubscription({ name, layer, callback });
+    }
+  }
+
+  setCursor(value: string) {
+    if (!this._map) return;
+    const prev = this._map.getCanvas().style.cursor;
+    if (prev !== value) this._map.getCanvas().style.cursor = value;
+
+    return () => {
+      if (!this._map) return;
+      const current = this._map.getCanvas().style.cursor;
+      if (current !== prev) this._map.getCanvas().style.cursor = prev;
+    };
+  }
+
+  public setState(layer: LayerType, nesting: number[][], key: LayerState, value: boolean) {
+    if (layer === "points")
+      return this._handleSetState(
+        layer,
+        nesting.map((n) => `${n.map((x) => x + 1).join(".")}.`),
+        key,
+        value,
       );
-      (this._map?.getSource(this.layerNames[type]) as mapboxgl.GeoJSONSource)?.setData({
-        type: "FeatureCollection",
-        features: [...collection.disabled, ...collection.default, ...collection.hover, ...collection.active],
-      });
 
-      this._requested[type] = false;
-    });
+    this._handleSetState(
+      layer,
+      nesting.reduce((acc, n) => {
+        const search = `${n.map((x) => x + 1).join(".")}.`;
 
-    this._map && window.requestAnimationFrame(this._handleRender);
+        return [
+          ...acc,
+          search,
+          ...(this._features[layer] ?? []).reduce((ids, f) => {
+            if (f.id?.toString().indexOf(search) !== 0) return ids;
+            return [...ids, f.id.toString()];
+          }, [] as string[]),
+        ];
+      }, [] as string[]),
+      key,
+      value,
+    );
   }
 
-  private _handleFillMouseMove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
-    this._hovered.planes = (e.features || []).map((f) => {
-      const { nesting, ...rest } = f.properties as LayerFeatureProperties;
-      return {
-        type: "Polygon",
-        coordinates: (f.geometry as geojson.Polygon).coordinates,
-        nesting: JSON.parse(nesting),
-        props: rest,
-      };
-    });
+  public render(key: "features" | "points", items: Feature[] | Point[]) {
+    if (key === "points") return this._toFeatures("points", items as Point[]);
+    this._toFeatures(
+      "planes",
+      (items as Feature[]).reduce((acc, item) => {
+        switch (item.type) {
+          case "Polygon":
+            return [...acc, item];
+          case "MultiPolygon":
+            return [
+              ...acc,
+              ...item.coordinates.map(
+                (coords, index) =>
+                  ({
+                    ...item,
+                    type: "Polygon",
+                    coordinates: coords,
+                    nesting: [...item.nesting, index],
+                  }) as Plane,
+              ),
+            ];
+          default:
+            return acc;
+        }
+      }, [] as Plane[]),
+    );
+
+    this._toFeatures(
+      "lines",
+      (items as Feature[]).reduce((acc, item) => {
+        const res: Line[] = [];
+        lib.traverseCoordinates(item, (positions, indices) => {
+          res.push({
+            type: "LineString",
+            coordinates: positions,
+            nesting: [...indices],
+            props: item.props,
+          });
+        });
+        return [...acc, ...res];
+      }, [] as Line[]),
+    );
   }
 
-  private _handleFillMouseLeave() {
-    this._hovered.planes = [];
+  get renderer() {
+    return this._map;
   }
 
-  private _handleLineMouseMove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
-    this._hovered.lines = (e.features || []).map((f) => {
-      const { nesting, ...rest } = f.properties as LayerFeatureProperties;
-      return {
-        type: "LineString",
-        coordinates: (f.geometry as geojson.LineString).coordinates,
-        nesting: JSON.parse(nesting),
-        props: rest,
-      };
-    });
+  public remove() {
+    this._map?.off("mousemove", this.layerNames.planes, this._handleFillMouseMove);
+    this._map?.off("mousedown", this.layerNames.planes, this._handleFillMouseMove);
+    this._map?.off("mouseleave", this.layerNames.planes, this._handleFillMouseLeave);
+    this._map?.off("mousemove", this.layerNames.lines, this._handleLineMouseMove);
+    this._map?.off("mousedown", this.layerNames.lines, this._handleLineMouseMove);
+    this._map?.off("mouseleave", this.layerNames.lines, this._handleLineMouseLeave);
+    this._map?.off("mousemove", this.layerNames.points, this._handlePointMouseMove);
+    this._map?.off("mousedown", this.layerNames.points, this._handlePointMouseMove);
+    this._map?.off("mouseleave", this.layerNames.points, this._handlePointMouseLeave);
+    this._removeSources?.();
+    this._map = undefined;
   }
 
-  private _handleLineMouseLeave() {
-    this._hovered.lines = [];
-  }
+  private _toFeatures(type: LayerType, items: (Line | Plane | Point)[]) {
+    this._features[type] = items.map(
+      (item) =>
+        ({
+          id: `${item.nesting.map((x) => x + 1).join(".")}.`,
+          type: "Feature",
+          geometry: {
+            type: featureTypes[type],
+            coordinates: item.coordinates,
+          },
+          properties: {
+            ...item.props,
+            nesting: JSON.stringify(item.nesting),
+          },
+        }) as geojson.Feature,
+    );
 
-  private _handlePointMouseMove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
-    this._hovered.points = sortPointsByDistance(
-      (e.features ?? []) as unknown as geojson.Feature<geojson.Point, LayerFeatureProperties>[],
-      e.lngLat.toArray(),
-    ).map((f) => {
-      const { nesting, ...rest } = f.properties as LayerFeatureProperties;
-      return {
-        type: "Point",
-        coordinates: (f.geometry as geojson.Point).coordinates,
-        nesting: JSON.parse(nesting),
-        props: rest,
-      };
-    });
-  }
+    const ids = this._features[type]?.map((f) => f.id) ?? [];
+    this._hovered[type] = this._hovered[type]?.filter((i) =>
+      ids.includes(`${i.nesting.map((x) => x + 1).join(".")}.`),
+    ) as any;
 
-  private _handlePointMouseLeave() {
-    this._hovered.points = [];
+    this._requested[type] = true;
   }
 
   private _initSources(options?: Options) {
@@ -287,49 +365,40 @@ export class MapboxController extends Controller {
     });
   }
 
-  public addListener(
-    ...params:
-      | [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler]
-      | [keyof mapboxgl.MapEventType, SourceEventHandler]
-      | [keyof mapboxgl.MapEventType, SourceEventHandler, SourceEventOptions]
-  ) {
-    if (typeof params[1] === "function") {
-      const [name, callback, options] = params as [
-        keyof mapboxgl.MapEventType,
-        SourceEventHandler,
-        SourceEventOptions | undefined,
-      ];
-      this._addMapListener(name, callback, options);
-    } else {
-      const [name, layer, callback] = params as [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler];
-      this._addLayerListener(name, layer, callback);
-    }
-  }
+  private _handleRender() {
+    (["points", "lines", "planes"] as LayerType[]).forEach((type) => {
+      if (!this._requested[type]) return;
+      const parse = (item: geojson.Feature) => ({
+        ...item,
+        id: (item.id as string).split(".").join("0"),
+      });
 
-  public removeListener(
-    ...params:
-      | [keyof mapboxgl.MapEventType, SourceEventHandler]
-      | [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler]
-  ) {
-    if (typeof params[1] === "function") {
-      const [name, callback] = params as [keyof mapboxgl.MapEventType, SourceEventHandler];
-      this._removeSubscription({ name, callback });
-    } else {
-      const [name, layer, callback] = params as [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler];
-      this._removeSubscription({ name, layer, callback });
-    }
-  }
+      const collection = (this._features[type] ?? []).reduce(
+        (acc, item) => {
+          if (this._states[type]?.active?.includes(item.id as string))
+            return { ...acc, active: [...acc.active, parse(item)] };
+          if (this._states[type]?.hover?.includes(item.id as string))
+            return { ...acc, hover: [...acc.hover, parse(item)] };
+          if (this._states[type]?.disabled?.includes(item.id as string))
+            return { ...acc, disabled: [...acc.disabled, parse(item)] };
+          return { ...acc, default: [...acc.default, parse(item)] };
+        },
+        {
+          disabled: [],
+          default: [],
+          hover: [],
+          active: [],
+        } as Record<LayerState | "default", geojson.Feature[]>,
+      );
+      (this._map?.getSource(this.layerNames[type]) as mapboxgl.GeoJSONSource)?.setData({
+        type: "FeatureCollection",
+        features: [...collection.disabled, ...collection.default, ...collection.hover, ...collection.active],
+      });
 
-  setCursor(value: string) {
-    if (!this._map) return;
-    const prev = this._map.getCanvas().style.cursor;
-    if (prev !== value) this._map.getCanvas().style.cursor = value;
+      this._requested[type] = false;
+    });
 
-    return () => {
-      if (!this._map) return;
-      const current = this._map.getCanvas().style.cursor;
-      if (current !== prev) this._map.getCanvas().style.cursor = prev;
-    };
+    this._map && window.requestAnimationFrame(this._handleRender);
   }
 
   private _handleSetState(layer: LayerType, ids: (string | undefined)[], key: LayerState, value: boolean) {
@@ -356,123 +425,54 @@ export class MapboxController extends Controller {
     this._requested[layer] = true;
   }
 
-  public setState(layer: LayerType, nesting: number[][], key: LayerState, value: boolean) {
-    if (layer === "points")
-      return this._handleSetState(
-        layer,
-        nesting.map((n) => `${n.map((x) => x + 1).join(".")}.`),
-        key,
-        value,
-      );
-
-    this._handleSetState(
-      layer,
-      nesting.reduce((acc, n) => {
-        const search = `${n.map((x) => x + 1).join(".")}.`;
-
-        return [
-          ...acc,
-          search,
-          ...(this._features[layer] ?? []).reduce((ids, f) => {
-            if (f.id?.toString().indexOf(search) !== 0) return ids;
-            return [...ids, f.id.toString()];
-          }, [] as string[]),
-        ];
-      }, [] as string[]),
-      key,
-      value,
-    );
+  private _handleFillMouseMove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
+    this._hovered.planes = (e.features || []).map((f) => {
+      const { nesting, ...rest } = f.properties as LayerFeatureProperties;
+      return {
+        type: "Polygon",
+        coordinates: (f.geometry as geojson.Polygon).coordinates,
+        nesting: JSON.parse(nesting),
+        props: rest,
+      };
+    });
   }
 
-  private _toFeatures(type: LayerType, items: (Line | Plane | Point)[]) {
-    this._features[type] = items.map(
-      (item) =>
-        ({
-          id: `${item.nesting.map((x) => x + 1).join(".")}.`,
-          type: "Feature",
-          geometry: {
-            type: featureTypes[type],
-            coordinates: item.coordinates,
-          },
-          properties: {
-            ...item.props,
-            nesting: JSON.stringify(item.nesting),
-          },
-        }) as geojson.Feature,
-    );
-
-    const ids = this._features[type]?.map((f) => f.id) ?? [];
-    this._hovered[type] = this._hovered[type]?.filter((i) =>
-      ids.includes(`${i.nesting.map((x) => x + 1).join(".")}.`),
-    ) as any;
-
-    this._requested[type] = true;
+  private _handleFillMouseLeave() {
+    this._hovered.planes = [];
   }
 
-  render(key: "features" | "points", items: Feature[] | Point[]) {
-    if (key === "points") return this._toFeatures("points", items as Point[]);
-    this._toFeatures(
-      "planes",
-      (items as Feature[]).reduce((acc, item) => {
-        switch (item.type) {
-          case "Polygon":
-            return [...acc, item];
-          case "MultiPolygon":
-            return [
-              ...acc,
-              ...item.coordinates.map(
-                (coords, index) =>
-                  ({
-                    ...item,
-                    type: "Polygon",
-                    coordinates: coords,
-                    nesting: [...item.nesting, index],
-                  }) as Plane,
-              ),
-            ];
-          default:
-            return acc;
-        }
-      }, [] as Plane[]),
-    );
-
-    this._toFeatures(
-      "lines",
-      (items as Feature[]).reduce((acc, item) => {
-        const res: Line[] = [];
-        lib.traverseCoordinates(item, (positions, indices) => {
-          res.push({
-            type: "LineString",
-            coordinates: positions,
-            nesting: [...indices],
-            props: item.props,
-          });
-        });
-        return [...acc, ...res];
-      }, [] as Line[]),
-    );
+  private _handleLineMouseMove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
+    this._hovered.lines = (e.features || []).map((f) => {
+      const { nesting, ...rest } = f.properties as LayerFeatureProperties;
+      return {
+        type: "LineString",
+        coordinates: (f.geometry as geojson.LineString).coordinates,
+        nesting: JSON.parse(nesting),
+        props: rest,
+      };
+    });
   }
 
-  get renderer() {
-    return this._map;
+  private _handleLineMouseLeave() {
+    this._hovered.lines = [];
   }
 
-  onInit(callback: () => void) {
-    if (this._map) return callback();
-    this._onInit = callback;
+  private _handlePointMouseMove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
+    this._hovered.points = sortPointsByDistance(
+      (e.features ?? []) as unknown as geojson.Feature<geojson.Point, LayerFeatureProperties>[],
+      e.lngLat.toArray(),
+    ).map((f) => {
+      const { nesting, ...rest } = f.properties as LayerFeatureProperties;
+      return {
+        type: "Point",
+        coordinates: (f.geometry as geojson.Point).coordinates,
+        nesting: JSON.parse(nesting),
+        props: rest,
+      };
+    });
   }
 
-  public remove() {
-    this._map?.off("mousemove", this.layerNames.planes, this._handleFillMouseMove);
-    this._map?.off("mousedown", this.layerNames.planes, this._handleFillMouseMove);
-    this._map?.off("mouseleave", this.layerNames.planes, this._handleFillMouseLeave);
-    this._map?.off("mousemove", this.layerNames.lines, this._handleLineMouseMove);
-    this._map?.off("mousedown", this.layerNames.lines, this._handleLineMouseMove);
-    this._map?.off("mouseleave", this.layerNames.lines, this._handleLineMouseLeave);
-    this._map?.off("mousemove", this.layerNames.points, this._handlePointMouseMove);
-    this._map?.off("mousedown", this.layerNames.points, this._handlePointMouseMove);
-    this._map?.off("mouseleave", this.layerNames.points, this._handlePointMouseLeave);
-    this._removeSources?.();
-    this._map = undefined;
+  private _handlePointMouseLeave() {
+    this._hovered.points = [];
   }
 }

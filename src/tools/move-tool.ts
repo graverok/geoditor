@@ -70,7 +70,6 @@ export class MoveTool extends AnyTool {
   }
 
   private _handleFeatureDeselect(e: SourceEvent) {
-    // Need testing?
     const indices = [...e.points, ...e.lines, ...e.planes].map((f) => f.nesting[0]);
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) {
       if (indices.length) return;

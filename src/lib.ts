@@ -1,7 +1,5 @@
-import { Feature, Position, Point, DrawType, EventType } from "./types";
+import { Feature, Position, Point, DrawType } from "./types";
 import * as geojson from "geojson";
-
-export const getEventTypes = (): EventType[] => ["hover", "click"];
 
 const getCoordinates = (feature: Feature | undefined, nesting: number[]): Position[] => {
   if (!feature) return [];

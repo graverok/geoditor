@@ -1,8 +1,8 @@
 import { Core } from "./core";
-import { Shape, TestHandler } from "../types";
+import { Shape, FilterHandler, SubscribeType } from "../types";
 
 type Subscriber = {
-  filter?: (callback: TestHandler) => Subscriber;
+  filter?: (callback: FilterHandler) => Subscriber;
 };
 
 export abstract class AnyTool {
@@ -10,14 +10,14 @@ export abstract class AnyTool {
   readonly config: unknown;
   public subscriber: Subscriber;
   private subscriptions: {
-    filter?: TestHandler;
+    filter?: FilterHandler;
   };
 
   constructor(config?: unknown) {
     this.config = config;
     this.subscriptions = {};
     this.subscriber = {
-      filter: this._filter,
+      filter: this._subscriber("filter"),
     };
   }
 
@@ -33,12 +33,12 @@ export abstract class AnyTool {
     this.subscriptions = {};
   }
 
-  private _filter = (callback: TestHandler) => {
-    this.subscriptions.filter = callback;
-    return this.subscriber;
-  };
-
   protected filter = (shape: Shape) => {
     return this.subscriptions.filter?.(shape) ?? true;
+  };
+
+  private _subscriber = (type: SubscribeType) => (callback: FilterHandler) => {
+    this.subscriptions[type] = callback;
+    return this.subscriber;
   };
 }

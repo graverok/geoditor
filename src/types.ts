@@ -1,7 +1,6 @@
 import * as geojson from "geojson";
 
 export type Position = number[];
-export type EventType = "hover" | "click";
 export type DrawType = "LineString" | "Polygon" | "MultiLineString" | "MultiPolygon";
 export type LayerType = "points" | "lines" | "planes";
 export type LayerState = "disabled" | "hover" | "active";
@@ -51,4 +50,5 @@ export interface SourceEvent<O extends MouseEvent | TouchEvent = MouseEvent> {
 
 export type SourceEventHandler = (e: SourceEvent) => void;
 export type SourceEventOptions = { once?: boolean };
-export type TestHandler = (shape: Shape) => boolean | void;
+export type FilterHandler = (shape: Shape) => boolean | void;
+export type SubscribeType = "filter";

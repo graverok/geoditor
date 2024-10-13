@@ -6,8 +6,6 @@ import { StateManager } from "./state-manager";
 import { array, traverseCoordinates } from "../lib";
 
 export class Core {
-  private _data: geojson.Feature[] = [];
-  private _controller: Controller;
   public addListener;
   public removeListener;
   public setCursor;
@@ -16,8 +14,10 @@ export class Core {
     points: StateManager;
   };
   public render: (type: "features" | "points", items: Feature[] | Point[]) => void;
+  private _data: geojson.Feature[] = [];
   private readonly _onSelect!: ((next: (number | number[])[]) => void) | undefined;
   private readonly _onChange!: (() => void) | undefined;
+  private readonly _controller: Controller;
 
   constructor(props: {
     controller: Controller;
