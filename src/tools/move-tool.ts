@@ -186,9 +186,9 @@ export class MoveTool extends AnyTool {
 
     if (point.nesting[pidx] >= positions.length) {
       isChanged = true;
-      this.core.state.points.set("hover", []);
 
       point.nesting[pidx] = (point.nesting[pidx] % positions.length) + 1;
+
       positions = [
         ...positions.slice(0, point.nesting[pidx]),
         point.coordinates,
@@ -253,15 +253,15 @@ export class MoveTool extends AnyTool {
       this._handleFeatureHover(e);
     };
 
-    const isReducable = positions.length > 2 + Number(lib.isPolygonLike(feature));
+    const isReducible = positions.length > 2 + Number(lib.isPolygonLike(feature));
     const before =
-      isReducable && point.nesting[pidx] === 0
+      isReducible && point.nesting[pidx] === 0
         ? lib.isPolygonLike(feature)
           ? positions.length - 1
           : -1
         : point.nesting[pidx] - 1;
     const after =
-      isReducable && point.nesting[pidx] === positions.length - 1
+      isReducible && point.nesting[pidx] === positions.length - 1
         ? lib.isPolygonLike(feature)
           ? 0
           : -1
@@ -277,8 +277,10 @@ export class MoveTool extends AnyTool {
       }, [] as number[][]),
     );
     this.core.render("points", points);
-    this.core.state.points.set("hover", [point.nesting]);
-    this.core.state.points.set("active", [point.nesting]);
+    window.requestAnimationFrame(() => {
+      this.core.state.points.set("hover", [point.nesting]);
+      this.core.state.points.set("active", [point.nesting]);
+    });
 
     this.core.addListener("mousemove", _onMove);
     document.addEventListener("mouseup", _onFinish, { once: true });
