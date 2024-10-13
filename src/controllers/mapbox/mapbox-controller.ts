@@ -7,6 +7,7 @@ import {
   LayerState,
   LayerType,
   Line,
+  ControllerEventType,
   Plane,
   Point,
   SourceEventHandler,
@@ -96,33 +97,31 @@ export class MapboxController extends Controller {
 
   addListener(
     ...params:
-      | [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler]
-      | [keyof mapboxgl.MapEventType, SourceEventHandler]
-      | [keyof mapboxgl.MapEventType, SourceEventHandler, SourceEventOptions]
+      | [ControllerEventType, LayerType, SourceEventHandler]
+      | [ControllerEventType, SourceEventHandler]
+      | [ControllerEventType, SourceEventHandler, SourceEventOptions]
   ) {
     if (typeof params[1] === "function") {
       const [name, callback, options] = params as [
-        keyof mapboxgl.MapEventType,
+        ControllerEventType,
         SourceEventHandler,
         SourceEventOptions | undefined,
       ];
       this._addMapListener(name, callback, options);
     } else {
-      const [name, layer, callback] = params as [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler];
+      const [name, layer, callback] = params as [ControllerEventType, LayerType, SourceEventHandler];
       this._addLayerListener(name, layer, callback);
     }
   }
 
   removeListener(
-    ...params:
-      | [keyof mapboxgl.MapEventType, SourceEventHandler]
-      | [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler]
+    ...params: [ControllerEventType, SourceEventHandler] | [ControllerEventType, LayerType, SourceEventHandler]
   ) {
     if (typeof params[1] === "function") {
-      const [name, callback] = params as [keyof mapboxgl.MapEventType, SourceEventHandler];
+      const [name, callback] = params as [ControllerEventType, SourceEventHandler];
       this._removeSubscription({ name, callback });
     } else {
-      const [name, layer, callback] = params as [keyof mapboxgl.MapLayerEventType, LayerType, SourceEventHandler];
+      const [name, layer, callback] = params as [ControllerEventType, LayerType, SourceEventHandler];
       this._removeSubscription({ name, layer, callback });
     }
   }
@@ -298,11 +297,7 @@ export class MapboxController extends Controller {
     }
   }
 
-  private _addMapListener(
-    name: keyof mapboxgl.MapEventType,
-    callback: SourceEventHandler,
-    options?: SourceEventOptions,
-  ) {
+  private _addMapListener(name: ControllerEventType, callback: SourceEventHandler, options?: SourceEventOptions) {
     const handler = (e: mapboxgl.MapMouseEvent) => {
       callback(eventMapParser(e, this._hovered));
     };
@@ -324,7 +319,7 @@ export class MapboxController extends Controller {
     this._addSubscription({ callback, name, off: () => this._map?.off(name, handler) });
   }
 
-  private _addLayerListener(name: keyof mapboxgl.MapLayerEventType, layer: LayerType, callback: SourceEventHandler) {
+  private _addLayerListener(name: ControllerEventType, layer: LayerType, callback: SourceEventHandler) {
     if (name === "mouseleave" || name === "mouseover") {
       return this._addSubscription({
         callback,

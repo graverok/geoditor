@@ -1,10 +1,20 @@
-import { Feature, LayerType, Point, SourceEventOptions, SourceEventHandler, LayerState } from "../types";
+import {
+  Feature,
+  LayerType,
+  Point,
+  SourceEventOptions,
+  SourceEventHandler,
+  LayerState,
+  ControllerEventType,
+} from "../types";
 
-type AddListenerParams<E extends string = string> =
-  | [E, SourceEventHandler]
-  | [E, SourceEventHandler, SourceEventOptions]
-  | [E, LayerType, SourceEventHandler];
-type RemoveListenerParams<E extends string = string> = [E, SourceEventHandler] | [E, LayerType, SourceEventHandler];
+type AddListenerParams =
+  | [ControllerEventType, SourceEventHandler]
+  | [ControllerEventType, SourceEventHandler, SourceEventOptions]
+  | [ControllerEventType, LayerType, SourceEventHandler];
+type RemoveListenerParams =
+  | [ControllerEventType, SourceEventHandler]
+  | [ControllerEventType, LayerType, SourceEventHandler];
 
 export abstract class Controller {
   readonly layerNames: Record<LayerType, string>;
