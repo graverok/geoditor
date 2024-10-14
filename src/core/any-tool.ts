@@ -7,8 +7,8 @@ type Subscriber = {
 
 export abstract class AnyTool {
   public core!: Core;
-  readonly config: unknown;
-  public subscriber: Subscriber;
+  public readonly config: unknown;
+  public readonly subscriber: Subscriber;
   private subscriptions: {
     filter?: FilterHandler;
   };

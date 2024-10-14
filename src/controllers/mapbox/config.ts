@@ -11,14 +11,20 @@ type ConfigParams<T> = { default: { [key in keyof T]: T[key] } } & Partial<
   Record<"disabled" | "active" | "hover", { [key in keyof T]: T[key] }>
 >;
 
-type LayerConfig = {
+type LayerShapeConfig = {
   type: mapboxgl.Layer["type"];
   paint: ConfigParams<mapboxgl.AnyPaint>;
   layout?: mapboxgl.AnyLayout;
 };
 
+type LayerConfig = {
+  points?: LayerShapeConfig;
+  lines?: LayerShapeConfig;
+  planes?: LayerShapeConfig;
+};
+
 export type Options = {
-  config?: LayerConfig[];
+  config?: LayerConfig;
   layerStyles?: Omit<mapboxgl.Layer, "id">[];
   area?: {
     points?: number;
@@ -50,26 +56,33 @@ export const areaLayer = {
   }),
 };
 
-export const defaultConfig: LayerConfig[] = [
-  {
-    type: "fill",
+export const defaultConfig: LayerConfig = {
+  points: {
+    type: "circle",
     paint: {
       default: {
-        "fill-color": ["get", "color"],
-        "fill-opacity": 0.12,
+        "circle-stroke-color": ["get", "color"],
+        "circle-color": "#FFFFFF",
+        "circle-radius": 2.2,
+        "circle-stroke-width": 1.8,
       },
       disabled: {
-        "fill-opacity": 0.03,
+        "circle-radius": 1.8,
+        "circle-stroke-width": 1,
+        "circle-color": ["get", "color"],
       },
       hover: {
-        "fill-opacity": 0.16,
+        "circle-radius": 2.6,
+        "circle-color": "#FFFFFF",
+        "circle-stroke-width": 2,
       },
       active: {
-        "fill-opacity": 0.2,
+        "circle-stroke-color": "#FFFFFF",
+        "circle-color": ["get", "color"],
       },
     },
   },
-  {
+  lines: {
     type: "line",
     paint: {
       default: {
@@ -95,35 +108,28 @@ export const defaultConfig: LayerConfig[] = [
       "line-join": "round",
     },
   },
-  {
-    type: "circle",
+  planes: {
+    type: "fill",
     paint: {
       default: {
-        "circle-stroke-color": ["get", "color"],
-        "circle-color": "#FFFFFF",
-        "circle-radius": 2.2,
-        "circle-stroke-width": 1.8,
+        "fill-color": ["get", "color"],
+        "fill-opacity": 0.12,
       },
       disabled: {
-        "circle-radius": 1.8,
-        "circle-stroke-width": 1,
-        "circle-color": ["get", "color"],
+        "fill-opacity": 0.03,
       },
       hover: {
-        "circle-radius": 2.6,
-        "circle-color": "#FFFFFF",
-        "circle-stroke-width": 2,
+        "fill-opacity": 0.16,
       },
       active: {
-        "circle-stroke-color": "#FFFFFF",
-        "circle-color": ["get", "color"],
+        "fill-opacity": 0.2,
       },
     },
   },
-];
+};
 
-export const generateLayers = (config: LayerConfig[]): Omit<mapboxgl.Layer, "id">[] => {
-  return config.map((item) => {
+export const generateLayers = (config: LayerConfig): Omit<mapboxgl.Layer, "id">[] => {
+  return Object.values(config).map((item) => {
     const paintKeys = Object.keys(item.paint.default);
 
     return {

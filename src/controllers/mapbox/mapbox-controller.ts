@@ -90,12 +90,12 @@ export class MapboxController extends Controller {
     map.isStyleLoaded() ? init() : map.on("load", () => init());
   }
 
-  onInit(callback: () => void) {
+  public onInit(callback: () => void) {
     if (this._map) return callback();
     this._onInit = callback;
   }
 
-  addListener(
+  public addListener(
     ...params:
       | [ControllerEventType, LayerType, SourceEventHandler]
       | [ControllerEventType, SourceEventHandler]
@@ -114,7 +114,7 @@ export class MapboxController extends Controller {
     }
   }
 
-  removeListener(
+  public removeListener(
     ...params: [ControllerEventType, SourceEventHandler] | [ControllerEventType, LayerType, SourceEventHandler]
   ) {
     if (typeof params[1] === "function") {
@@ -126,7 +126,7 @@ export class MapboxController extends Controller {
     }
   }
 
-  setCursor(value: string) {
+  public setCursor(value: string) {
     if (!this._map) return;
     const prev = this._map.getCanvas().style.cursor;
     if (prev !== value) this._map.getCanvas().style.cursor = value;

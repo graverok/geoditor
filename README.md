@@ -6,7 +6,7 @@ Supported features:
 - `Polygon`
 - `MultiLineString`
 - `MultiPolygon`
-- `GeometryCollection` coming soon.
+- `GeometryCollection` coming someday.
 
 ### Installing
 ```
@@ -36,8 +36,8 @@ const geoditor = new Geoditor({
 Any tool can be reused under different names with different settings (if supported). For example, multiple instances of Pen tool to create only lineal or polygonal geometries tools:
 ```
 tools: {
-  line: new PenTool({ drawTypes: ["LineString", "MultiLineString"]}),
-  polygon: new PenTool({ drawTypes: ["Polygon", "MultiPolygon"] }),
+  line: new PenTool({ types: ["LineString", "MultiLineString"]}),
+  polygon: new PenTool({ types: ["Polygon", "MultiPolygon"] }),
 }
 ```
 
@@ -137,19 +137,19 @@ geoditor.on("select", (selected: number[]) => {
 
 Different tools can be initialised with PenTool using different options:
 
-| Property     | Description                                                                                                    | Type                                                                                                                                          | Default                                                        |
-|:------------:|:---------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------|
-| __drawType__ | Types of created features                                                                                      | `LineString` \| `Polygon` \| `MultiLineString` \| `MultiPolygon` \| `Array<"LineString" \| "Polygon" \| "MultiLineString" \| "MultiPolygon">` | `["LineString", "Polygon", "MultiLineString", "MultiPolygon"]` |
-| __append__   | Ability to extend line geometry and convert single geometry to multi if corresponding draw types are provided. | `boolean` \| `shiftKey` \| `altKey` \| `ctrlKey` \| `metaKey` | `true` | 
-| __subtract__ | Ability to subtract shapes from polygonal features.                                                            | `boolean` \| `shiftKey` \| `altKey` \| `ctrlKey` \| `metaKey` | `true` | 
-| __create__   | Ability to add new features.                                                                                   | `boolean` \| `shiftKey` \| `altKey` \| `ctrlKey` \| `metaKey` | `true` | 
+|   Property   | Description                                                                                          | Type                                                                                                                                          | Default                                                        |
+|:------------:|:-----------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------|
+|  __types__   | Types of created features                                                                            | `LineString` \| `Polygon` \| `MultiLineString` \| `MultiPolygon` \| `Array<"LineString" \| "Polygon" \| "MultiLineString" \| "MultiPolygon">` | `["LineString", "Polygon", "MultiLineString", "MultiPolygon"]` |
+|  __append__  | Extends line geometry and converts single geometry to multi if corresponding types are provided.     | `boolean` \| `shift` \| `alt` \| `ctrl` \| `meta`                                                                                          | `true` | 
+| __subtract__ | Subtract shapes from polygonal features.                                                             | `boolean` \| `shift` \| `alt` \| `ctrl` \| `meta`                                                                                          | `true` | 
+|  __create__  | Add new features.                                                                                    | `boolean` \| `shift` \| `alt` \| `ctrl` \| `meta`                                                                                             | `true` | 
 
 #### Examples
 ```ts
 const PolygonTool = new PenTool({
-  drawTypes: ["Polygon", "MultiPolygon"],
-  append: "shiftKey",
-  subtract: "altKey",
+  types: ["Polygon", "MultiPolygon"],
+  append: "shift",
+  subtract: "alt",
 });
 
 const AppendTool = new PenTool({
@@ -157,3 +157,11 @@ const AppendTool = new PenTool({
   subtract: false,
 });
 ```
+
+### Move Tool
+
+You can provide key modifier to enable editing point mode. If no modifier is provided this mode enables by double click.
+
+|  Property  | Description                                                                                | Type                                                 | Default |
+|:----------:|:-------------------------------------------------------------------------------------------|:-----------------------------------------------------|:--------|
+| __modify__ | Sets modifier key to activate point editing mode. If `true` second click enables this mode | `boolean` \| `dblclick` \| `alt` \| `ctrl` \| `meta` | `true`  | 

@@ -1,5 +1,18 @@
-import { Feature, Position, Point, DrawType } from "./types";
+import { Feature, Position, Point, GeometryType, KeyModifier } from "./types";
 import * as geojson from "geojson";
+
+export const getModifierKey = (modifier: KeyModifier): "altKey" | "shiftKey" | "metaKey" | "ctrlKey" => {
+  switch (modifier) {
+    case "alt":
+      return "altKey";
+    case "shift":
+      return "shiftKey";
+    case "ctrl":
+      return "ctrlKey";
+    case "meta":
+      return "metaKey";
+  }
+};
 
 const getCoordinates = (feature: Feature | undefined, nesting: number[]): Position[] => {
   if (!feature) return [];
@@ -58,7 +71,7 @@ const mutateFeature = (
   feature: Feature | undefined,
   nesting: number[],
   positions?: Position[] | ((current: Position[] | undefined) => Position[] | undefined),
-  drawTypes: DrawType[] = ["LineString", "MultiLineString", "Polygon", "MultiPolygon"],
+  types: GeometryType[] = ["LineString", "MultiLineString", "Polygon", "MultiPolygon"],
 ): Feature | undefined => {
   if (!feature) return undefined;
   if (feature.nesting[0] !== nesting[0]) return feature;
@@ -75,7 +88,7 @@ const mutateFeature = (
 
   const _mutateLineString = (f: Feature<geojson.LineString> | Feature<geojson.MultiLineString>, c: Position[][]) => {
     if (c.length === 0) return undefined;
-    if (c.length === 1 && drawTypes.includes("LineString"))
+    if (c.length === 1 && types.includes("LineString"))
       return { ...f, type: "LineString", coordinates: c[0] } as Feature<geojson.LineString>;
     return { ...f, type: "MultiLineString", coordinates: c } as Feature<geojson.MultiLineString>;
   };
@@ -83,7 +96,7 @@ const mutateFeature = (
   const _mutatePolygon = (f: Feature<geojson.Polygon> | Feature<geojson.MultiPolygon>, c: Position[][][]) => {
     const r = c.filter((i) => i.length);
     if (r.length === 0) return undefined;
-    if (r.length === 1 && drawTypes.includes("Polygon"))
+    if (r.length === 1 && types.includes("Polygon"))
       return { ...f, type: "Polygon", coordinates: r[0] } as Feature<geojson.Polygon>;
     return { ...f, type: "MultiPolygon", coordinates: r } as Feature<geojson.MultiPolygon>;
   };
@@ -212,17 +225,41 @@ const isPolygonLike = (feature: Feature) => {
   return feature.type === "Polygon" || feature.type === "MultiPolygon";
 };
 
-const coordinates = {
+const rad = (degree: number) => (degree / 180) * Math.PI;
+const degree = (rad: number) => (rad / Math.PI) * 180;
+
+const geo = {
+  rad,
+  degree,
+  cos: (degree: number) => Math.cos(rad(degree)),
+  sin: (degree: number) => Math.sin(rad(degree)),
+  delta: (start: Position, end: Position) => {
+    const l =
+      Math.pow(geo.sin((end[1] - start[1]) / 2), 2) +
+      Math.pow(geo.sin((end[0] - start[0]) / 2), 2) * geo.cos(start[1]) * geo.cos(end[1]);
+    return Math.atan2(Math.sqrt(l), Math.sqrt(1 - l)) * 2;
+  },
+  bearing: (start: Position, end: Position) => {
+    return degree(
+      Math.atan2(
+        geo.sin(end[0] - start[0]) * geo.cos(end[1]),
+        geo.cos(start[1]) * geo.sin(end[1]) - geo.sin(start[1]) * geo.cos(end[1]) * geo.cos(end[0] - start[0]),
+      ),
+    );
+  },
+};
+
+const point = {
   move: (position: Position, from: Position, to: Position) => {
     return [position[0] + to[0] - from[0], position[1] + to[1] - from[1]];
   },
-  average: (start: Position, end: Position) => {
+  middle: (start: Position, end: Position) => {
     if (!start || !end) return start || end;
-    return [(start[0] + end[0]) * 0.5, (start[1] + end[1]) * 0.5];
+    return [start[0] / 2 + end[0] / 2, start[1] / 2 + end[1] / 2];
   },
-  distance: (start: Position, end: Position): number => {
-    if (!start || !end) return -1;
-    return Math.sqrt(Math.pow(end[0] - start[0], 2) + Math.pow(end[1] - start[1], 2));
+  closest: (position: Position, check: Position): number => {
+    if (!position || !check) return -1;
+    return geo.delta(position, check);
   },
   normalize: (position: Position): Position => {
     let [lng, lat] = position;
@@ -230,13 +267,17 @@ const coordinates = {
     if (lat < -90) lat = -180 - lat;
     return [lng, lat];
   },
-  geodesic: (position: Position, from: Position, to: Position) =>
-    coordinates.normalize([
-      to[0] -
-        ((from[0] - position[0]) * Math.cos((position[1] / 180) * Math.PI)) /
-          Math.cos(((position[1] + to[1] - from[1]) / 180) * Math.PI),
-      position[1] + to[1] - from[1],
-    ]),
+};
+
+const shape = {
+  move: (positions: Position[], from: Position, to: Position) =>
+    positions.map((position) =>
+      point.normalize([
+        to[0] -
+          ((from[0] - position[0]) * Math.cos(geo.rad(position[1]))) / Math.cos(geo.rad(position[1] + to[1] - from[1])),
+        position[1] + to[1] - from[1],
+      ]),
+    ),
 };
 
 const array = {
@@ -266,8 +307,10 @@ export {
   toCoordinates,
   traverseCoordinates,
   mutateFeature,
-  coordinates,
+  point,
+  shape,
   array,
+  geo,
 };
 
 type SvgProps = { shape: string; contour: string; translate?: { x: number; y: number } };

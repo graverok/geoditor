@@ -10,10 +10,7 @@ export const sortPointsByDistance = (
   position: Position,
 ) => {
   return [...points].sort((a, b) =>
-    lib.coordinates.distance(a.geometry.coordinates, position) >=
-    lib.coordinates.distance(b.geometry.coordinates, position)
-      ? 1
-      : -1,
+    lib.point.closest(a.geometry.coordinates, position) >= lib.point.closest(b.geometry.coordinates, position) ? 1 : -1,
   );
 };
 
