@@ -259,12 +259,13 @@ export class MapboxController extends Controller {
 
     const sources: AddSourcePayload[] = [
       ...(Object.keys(this.layerNames) as LayerType[]).reduce((acc, type) => {
+        const area = options?.area?.[type];
         return [
           ...acc,
           {
             id: this.layerNames[type],
             layers: layers[type],
-            areaLayer: layers[type].length ? areaLayer[type](options?.area?.[type]) : undefined,
+            areaLayer: area !== false ? areaLayer[type](area) : undefined,
           },
         ];
       }, [] as AddSourcePayload[]),

@@ -32,7 +32,8 @@ export class Geoditor {
     load: (() => void)[];
     select: ((selected: number[]) => void)[];
     change: ((data: geojson.Feature[]) => void)[];
-  } = { load: [], select: [], change: [] };
+    render: ((data: geojson.Feature[]) => void)[];
+  } = { load: [], select: [], change: [], render: [] };
 
   constructor(config: Config) {
     this._core = new Core({
@@ -46,6 +47,9 @@ export class Geoditor {
         this._listeners.change.forEach((f) => f(this.data));
         this._tool && this._tools[this._tool]?.refresh();
       },
+      onRender: (data: geojson.Feature[]) => {
+        this._listeners.render.forEach((f) => f(data));
+      },
     });
     this._controller = config.controller;
     this._tools = config?.tools ?? defaultTools;
@@ -56,7 +60,8 @@ export class Geoditor {
   public on(name: "load", callback: () => void): void;
   public on(name: "select", callback: (selected: number[]) => void): void;
   public on(name: "change", callback: (data: geojson.Feature[]) => void): void;
-  public on(name: "load" | "select" | "change", callback: (...args: any) => void) {
+  public on(name: "render", callback: (data: geojson.Feature[]) => void): void;
+  public on(name: "load" | "select" | "change" | "render", callback: (...args: any) => void) {
     if (this._listeners[name].find((f) => f === callback)) return;
     this._listeners[name].push(callback);
     name === "load" && this._isLoaded && callback();

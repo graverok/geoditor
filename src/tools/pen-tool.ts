@@ -51,7 +51,7 @@ export class PenTool extends AnyTool {
 
   public enable(props?: Record<string, unknown>) {
     if (!this.config.types.length) {
-      this.core.isolateFeatures([]);
+      this.core.isolate([]);
       this._stored.cursor = this.core.setCursor(
         generateCursor("disabled", "not-allowed", this._state.props?.color?.toString()),
       );
@@ -104,7 +104,7 @@ export class PenTool extends AnyTool {
       }
 
       if (!this._state.feature) {
-        this.core.isolateFeatures([this.core.features.length]);
+        this.core.isolate([this.core.features.length]);
         if (active.length && !active.map(lib.array.plain).includes(this.core.features.length))
           this.core.state.features.set("active", [this.core.features.length]);
 
@@ -160,11 +160,17 @@ export class PenTool extends AnyTool {
               ? "line"
               : "polygon",
             "pointer",
-            this._state.props?.color?.toString(),
+            this._state.feature?.props?.color ?? this._state.props?.color?.toString(),
           ),
         );
       } else {
-        this.core.setCursor(generateCursor("default", "crosshair", this._state.props?.color?.toString()));
+        this.core.setCursor(
+          generateCursor(
+            "default",
+            "crosshair",
+            this._state.feature?.props?.color ?? this._state.props?.color?.toString(),
+          ),
+        );
       }
 
       !point && this._render(e.position);
@@ -178,7 +184,9 @@ export class PenTool extends AnyTool {
         .filter(this.filter)
         .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
       if (point) {
-        return this.core.setCursor(generateCursor("extend", "crosshair", this._state.props?.color?.toString()));
+        return this.core.setCursor(
+          generateCursor("extend", "crosshair", point.props?.color ?? this._state.props?.color?.toString()),
+        );
       }
     }
 
@@ -188,15 +196,13 @@ export class PenTool extends AnyTool {
       this.core.state.points.set("hover", []);
       if (plane) {
         this.core.state.features.set("hover", [plane.nesting]);
-        return this.core.setCursor(generateCursor("minus", "crosshair", this._state.props?.color?.toString()));
+        return this.core.setCursor(generateCursor("minus", "crosshair"));
       }
     }
 
-    if (this._state.modes.create)
-      return this.core.setCursor(generateCursor("default", "crosshair", this._state.props?.color?.toString()));
-    if (this._state.modes.append)
-      return this.core.setCursor(generateCursor("plus", "crosshair", this._state.props?.color?.toString()));
-    return this.core.setCursor(generateCursor("disabled", "not-allowed", this._state.props?.color?.toString()));
+    if (this._state.modes.create) return this.core.setCursor(generateCursor("default", "crosshair"));
+    if (this._state.modes.append) return this.core.setCursor(generateCursor("plus", "crosshair"));
+    return this.core.setCursor(generateCursor("disabled", "not-allowed"));
   }
 
   protected onCanvasClick(e: SourceEvent) {
@@ -249,7 +255,7 @@ export class PenTool extends AnyTool {
         this._state.nesting = point.nesting.slice(0, point.nesting.length - 1);
         this.core.state.features.set("active", [this._state.nesting]);
         this._state.reversed = point.nesting[point.nesting.length - 1] === 0;
-        this.core.isolateFeatures();
+        this.core.isolate();
         this._render();
       }
       return;
@@ -268,7 +274,7 @@ export class PenTool extends AnyTool {
             : [...plane.nesting, this._state.feature.coordinates[plane.nesting[1]].length];
         this.core.state.features.set("active", [this._state.nesting]);
         this._state.geometry = [e.position];
-        this.core.isolateFeatures();
+        this.core.isolate();
         this._render();
         return;
       }
@@ -279,7 +285,7 @@ export class PenTool extends AnyTool {
       this._state.geometry = [e.position];
       this._state.nesting = hasLineString(this.config.types) ? [count] : [count, 0];
       this.core.state.features.set("active", [this._state.nesting]);
-      this.core.isolateFeatures();
+      this.core.isolate();
       this._render();
       return;
     }
@@ -320,7 +326,7 @@ export class PenTool extends AnyTool {
       generateCursor(
         this._getRenderType() === "LineString" ? "line" : "polygon",
         "pointer",
-        this._state.props?.color?.toString(),
+        this._state.feature?.props?.color,
       ),
     );
     return;
@@ -487,7 +493,7 @@ export class PenTool extends AnyTool {
     this.core.state.points.set("active", []);
     this.core.render("points", points.filter(this.filter));
 
-    this.core.isolateFeatures(_indices.map(lib.array.array));
+    this.core.isolate(_indices.map(lib.array.array));
 
     this._state.event &&
       this.onCanvasMouseMove({

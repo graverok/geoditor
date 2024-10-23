@@ -47,7 +47,7 @@ import { Geoditor, MapboxController, PenTool, MoveTool } from "geoditor";
 import { MapBox } from "mapbox-gl";
 
 const mapbox = new MapBox({
-  /* Your config */
+  /* options */
   ...
 });
 
@@ -56,6 +56,60 @@ const geoditor = new Geoditor({
   ...
 });
 ```
+
+### Options
+All options and optional. Use it only if you want to change rendering style or interactivity.
+Both `config` and `layerStyles` are used for visual representation of the layers, and
+`area` is used to define areas of interactivity.
+<details>
+<summary><strong>More info</strong></summary>
+
+```ts
+type Options = {
+    config?: LayerConfig;
+    layerStyles?: Omit<mapboxgl.Layer, "id">[];
+    area?: {
+        points?: number | false;
+        lines?: number | false;
+        planes?: false;
+    };
+}
+```
+
+#### layerStyles
+If `layerStyles` is provided `config` will be ignored. Any layer type can be used but:
+- `FillLayer` types are used to render `planes`
+- `LineLayer` types are used to render `lines`.
+- Every other layer will be used for rendering `points`.
+
+Use the following feature-states to distinct features in different states:
+`disabled`, `hover` or `active`
+
+#### config
+Config is used to generate mapbox.Layers for `planes`, `lines` and `points` separately.
+
+```ts
+type LayerConfig = {
+    points: {
+        type: mapboxgl.Layer["type"];
+        paint: {
+            // Feature states representation 
+            default: mapboxgl.AnyPaint,
+            /** Keep in mind that any paint properties key 
+             * missing in "default" will be ignored */
+            hover: mapboxgl.AnyPaint,
+            active: mapboxgl.AnyPaint,
+            disabled: mapboxgl.AnyPaint
+        }
+        layout?: mapboxgl.AnyLayout;
+    },
+    // lines and planes configs are the same 
+    lines: {...},
+    planes: {...}
+}
+```
+[See example](https://github.com/graverok/geoditor/blob/0d6daefd8721b709e20f146f610884cd102bedf3/src/controllers/mapbox/config.ts#L53)
+</details>
 
 ## Getters & Setters
 ### .data
@@ -108,7 +162,7 @@ geoditor.on("load", () => {
 ```
 
 ### .on("change")
-Fires on data update. Array of GeoJSON features is passed into listener. If you passed some data to Geoditor before it will only change features geometry and properties passed to Pen tool.  
+Fires on data change. Array of GeoJSON features is passed into listener. If you had provided some data to Geoditor before all feature properties will be kept.
 ```ts
 geoditor.on("change", (data: GeoJSON.Feature[]) => {
   // data === geoditor.data
@@ -116,19 +170,34 @@ geoditor.on("change", (data: GeoJSON.Feature[]) => {
   
   /** EXAMPLE:
       Switch to "move" tool after drawing */
-  geoditor.tool === "pen" && geoditor.tools.move();
+  if (geoditor.tool === "pen") geoditor.tools.move();
 });
 ```
 ### .on("select") 
 Fires on selected features change. Array of selected indices is passed into listener.
 ```ts
 geoditor.on("select", (selected: number[]) => {
-  /* 
+  /**
     selected !== geoditor.selected
     selected: number[] includes only indices of selected features
     geoditor.selected: (number | number[])[] returns selected shapes of features (if any)
    */
   console.log(selected, geoditor.selected);
+});
+```
+
+### .on("render")
+Fires every render. Can be used for simultaneous features update in a different source/map.
+
+```ts
+import * as mapboxgl from "mapbox-gl";
+
+geoditor.on("render", (data: GeoJSON.Feature[]) => {
+    // data !== geoditor.data 
+    console.log(data, geoditor.data);
+
+    // EXAMPLE:
+    mapboxgl.getSource("some-source")?.setData(data)
 });
 ```
 

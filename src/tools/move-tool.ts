@@ -29,7 +29,7 @@ export class MoveTool extends AnyTool {
 
   public refresh() {
     this.core.render("features", this.core.features);
-    this.core.isolateFeatures();
+    this.core.isolate();
     this._renderPoints();
   }
 
@@ -46,7 +46,7 @@ export class MoveTool extends AnyTool {
     this.core.addListener("dblclick", "planes", this.onGeometryDblClick);
     document.addEventListener("keydown", this.onKeyPress);
     document.addEventListener("keyup", this.onKeyPress);
-    this.core.isolateFeatures();
+    this.core.isolate();
     this._renderPoints();
   }
 
@@ -129,7 +129,7 @@ export class MoveTool extends AnyTool {
     }
 
     this.core.state.features.set("active", []);
-    this.core.isolateFeatures();
+    this.core.isolate();
     this._renderPoints();
     this.onFeatureHover(e);
   }

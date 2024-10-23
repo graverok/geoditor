@@ -27,9 +27,9 @@ export type Options = {
   config?: LayerConfig;
   layerStyles?: Omit<mapboxgl.Layer, "id">[];
   area?: {
-    points?: number;
-    lines?: number;
-    planes?: undefined;
+    points?: number | false;
+    lines?: number | false;
+    planes?: false;
   };
 };
 
@@ -129,43 +129,53 @@ export const defaultConfig: LayerConfig = {
 };
 
 export const generateLayers = (config: LayerConfig): Omit<mapboxgl.Layer, "id">[] => {
-  return Object.values(config).map((item) => {
-    const paintKeys = Object.keys(item.paint.default);
-
-    return {
-      type: item.type,
-      paint: (paintKeys as (keyof mapboxgl.AnyPaint)[]).reduce(
-        (
-          acc: mapboxgl.AnyPaint | mapboxgl.AnyLayout,
-          key: keyof (mapboxgl.AnyPaint | mapboxgl.AnyLayout),
-        ): mapboxgl.AnyPaint | mapboxgl.AnyLayout => {
-          return {
-            ...acc,
-            [key]: [
-              "case",
-              ["all", ["boolean", ["feature-state", "hover"], false], ["boolean", ["feature-state", "active"], false]],
-              item.paint.active?.[key] || item.paint.hover?.[key] || item.paint.default[key],
-              ["boolean", ["feature-state", "active"], false],
-              item.paint.active?.[key] || item.paint.default[key],
-              [
-                "all",
-                ["boolean", ["feature-state", "hover"], false],
-                ["boolean", ["feature-state", "disabled"], false],
-              ],
-              item.paint.default[key],
-              ["boolean", ["feature-state", "hover"], false],
-              item.paint.hover?.[key] || item.paint.default[key],
-              ["boolean", ["feature-state", "disabled"], false],
-              item.paint.disabled?.[key] || item.paint.default[key],
-              item.paint.default[key],
-            ],
-          };
-        },
-        {} as mapboxgl.AnyPaint,
-      ),
-      ...(item.layout ? { layout: item.layout } : {}),
-    } as Omit<mapboxgl.Layer, "id">;
-  });
+  return Object.values(config).reduce(
+    (layers, item) => {
+      if (!item) return layers;
+      const paintKeys = Object.keys(item.paint.default);
+      return [
+        ...layers,
+        {
+          type: item.type,
+          paint: (paintKeys as (keyof mapboxgl.AnyPaint)[]).reduce(
+            (
+              acc: mapboxgl.AnyPaint | mapboxgl.AnyLayout,
+              key: keyof (mapboxgl.AnyPaint | mapboxgl.AnyLayout),
+            ): mapboxgl.AnyPaint | mapboxgl.AnyLayout => {
+              return {
+                ...acc,
+                [key]: [
+                  "case",
+                  [
+                    "all",
+                    ["boolean", ["feature-state", "hover"], false],
+                    ["boolean", ["feature-state", "active"], false],
+                  ],
+                  item.paint.active?.[key] || item.paint.hover?.[key] || item.paint.default[key],
+                  ["boolean", ["feature-state", "active"], false],
+                  item.paint.active?.[key] || item.paint.default[key],
+                  [
+                    "all",
+                    ["boolean", ["feature-state", "hover"], false],
+                    ["boolean", ["feature-state", "disabled"], false],
+                  ],
+                  item.paint.default[key],
+                  ["boolean", ["feature-state", "hover"], false],
+                  item.paint.hover?.[key] || item.paint.default[key],
+                  ["boolean", ["feature-state", "disabled"], false],
+                  item.paint.disabled?.[key] || item.paint.default[key],
+                  item.paint.default[key],
+                ],
+              };
+            },
+            {} as mapboxgl.AnyPaint,
+          ),
+          ...(item.layout ? { layout: item.layout } : {}),
+        } as Omit<mapboxgl.Layer, "id">,
+      ];
+    },
+    [] as Omit<mapboxgl.Layer, "id">[],
+  );
 };
 
 export const splitLayers = (layers: Omit<mapboxgl.Layer, "id">[]): Record<LayerType, Omit<mapboxgl.Layer, "id">[]> =>
