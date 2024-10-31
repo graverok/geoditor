@@ -326,7 +326,7 @@ export class PenTool extends AnyTool {
       generateCursor(
         this._getRenderType() === "LineString" ? "line" : "polygon",
         "pointer",
-        this._state.feature?.props?.color,
+        this._state.feature?.props?.color ?? (this._state.props?.color as string | undefined),
       ),
     );
     return;
