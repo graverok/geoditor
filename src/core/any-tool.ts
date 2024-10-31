@@ -2,7 +2,7 @@ import { Core } from "./core";
 import { Shape, FilterHandler, SubscribeType } from "../types";
 
 type Subscriber = {
-  filter?: (callback: FilterHandler) => Subscriber;
+  filter: (callback: FilterHandler) => Subscriber;
 };
 
 export abstract class AnyTool {

@@ -16,6 +16,13 @@ npm install geoditor
 yarn add geoditor
 ```
 
+### Table of Content:
+- [Initialising](##Initialising)
+- [Using with MapBox](##Using with MapBox)
+- [Getters and Setters](##Getters and Setters)
+- [Events](##Events)
+- [Tools](##Tools)
+
 ## Initialising
 Geoditor is initialising with 2 types of modules.
 1. __Controller__ _(required)_ to render features onto map. Provides API between Geoditor core and map implementation. Currently only [MapBox](#using-with-mapbox) is supported. 
@@ -111,7 +118,7 @@ type LayerConfig = {
 [See example](https://github.com/graverok/geoditor/blob/0d6daefd8721b709e20f146f610884cd102bedf3/src/controllers/mapbox/config.ts#L53)
 </details>
 
-## Getters & Setters
+## Getters and Setters
 ### .data
 You can access or set data at any given moment. `LineString`, `Polygon`, `MultiLineString`, and `MultiPolygon` are supported. Rest won't be deleted or changed in any way but will be ignored in render.
 
