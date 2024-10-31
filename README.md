@@ -21,6 +21,7 @@ yarn add geoditor
 - [Using with MapBox](##Using with MapBox)
 - [Getters and Setters](##Getters and Setters)
 - [Events](##Events)
+- [Tool Subscribers](## Tool Subscribers)
 - [Tools](##Tools)
 
 ## Initialising
@@ -206,6 +207,32 @@ geoditor.on("render", (data: GeoJSON.Feature[]) => {
     // EXAMPLE:
     mapboxgl.getSource("some-source")?.setData(data)
 });
+```
+
+## Tool Subscribers
+### .filter() `Beta`
+Allows to filter shapes before interaction.
+
+```ts
+type Shape = (
+  { type: geojson.Point; coordinates: Position } |
+  { type: geojson.LineString; coordinates: Position[] } |
+  { type: geojson.Polygon; coordinates: Position[][] }
+) & (
+  { nesting: number[], props: mapboxgl.Feature["props"] }
+)  
+
+/** EXAMPLE:
+ * Ignores all events on first point of LineString features.
+ **/
+geoditor.tools.move().filter((shape: Shape): boolean | void => {
+  if (
+    shape.type === "Point" && 
+    geoditor.data[shape.nesting[0]].geometry.type === "LineString" && 
+    shape.nesting[shape.nesting.length - 1] === 0
+  ) 
+    return false;
+})
 ```
 
 ## Tools
