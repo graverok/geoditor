@@ -88,9 +88,10 @@ export class MoveTool extends AnyTool {
   protected onFeatureHover(e: SourceEvent) {
     if (this._state.dragging) return;
     this._event = e;
-    let shapes = [...e.points.filter(this.filter), ...e.lines.filter(this.filter), ...e.planes.filter(this.filter)].map(
-      (f) => f.nesting,
-    );
+    const points = e.points.filter(this.filter);
+    const lines = e.lines.filter(this.filter);
+    const planes = e.planes.filter(this.filter);
+    let shapes = [...points, ...lines, ...planes].map((f) => f.nesting);
 
     if (this.core.state.features.get("active").every((n) => typeof n === "number")) {
       this.core.setCursor(shapes.length ? this.generateCursor("default", "pointer") : "default");
@@ -103,9 +104,7 @@ export class MoveTool extends AnyTool {
     );
 
     if (shapes.length) {
-      this.core.setCursor(
-        this.generateCursor(e.points.length ? "point" : e.lines.length ? "line" : "polygon", "pointer"),
-      );
+      this.core.setCursor(this.generateCursor(points.length ? "point" : lines.length ? "line" : "polygon", "pointer"));
       this.core.state.features.set("hover", shapes.length ? [shapes[0]] : []);
     } else {
       this.core.setCursor("default");
@@ -250,13 +249,13 @@ export class MoveTool extends AnyTool {
   protected onPointHover(e: SourceEvent) {
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
     let point = e.points.filter(this.filter)[0];
-    if (!point) return;
+    console.log(point);
     !this._state.dragging && this.core.state.points.set("hover", [point.nesting]);
 
     const _onMove = (ev: SourceEvent) => {
       if (this._state.dragging) return;
       if (lib.array.equal(ev.points[0].nesting ?? [], point.nesting)) return;
-      point = ev.points[0];
+      point = ev.points.filter(this.filter)[0];
       this.core.state.points.set("hover", [point.nesting]);
     };
 
@@ -337,10 +336,7 @@ export class MoveTool extends AnyTool {
         feature,
         ...this.core.features.slice(point.nesting[0] + 1),
       ]);
-      this.core.render(
-        "points",
-        lib.createPoints([feature], this.core.state.features.get("active")).filter(this.filter),
-      );
+      this.core.render("points", lib.createPoints([feature], this.core.state.features.get("active")));
     };
 
     const _onFinish = (ev: MouseEvent) => {
@@ -352,7 +348,9 @@ export class MoveTool extends AnyTool {
       this.core.state.points.set("active", []);
 
       if (isChanged) {
-        this.core.state.points.set("hover", [sibling?.nesting[pidx] === before ? sibling.nesting : point.nesting]);
+        if (sibling && this.filter(sibling)) {
+          this.core.state.points.set("hover", [sibling?.nesting[pidx] === before ? sibling.nesting : point.nesting]);
+        }
 
         this.core.features = [
           ...this.core.features.slice(0, point.nesting[0]),
@@ -383,14 +381,21 @@ export class MoveTool extends AnyTool {
         : point.nesting[pidx] + 1;
 
     const points = lib.createPoints([feature], this.core.state.features.get("active"));
-    this.core.state.points.add(
-      "disabled",
-      points.reduce((acc, p) => {
-        if (before >= 0 && lib.array.equal(p.nesting, [...point.nesting.slice(0, pidx), before])) return acc;
-        if (after >= 0 && lib.array.equal(p.nesting, [...point.nesting.slice(0, pidx), after])) return acc;
-        return [...acc, p.nesting];
-      }, [] as number[][]),
+    const [disabled, enabled] = points.reduce(
+      (acc, p) => {
+        if (
+          (before >= 0 && lib.array.equal(p.nesting, [...point.nesting.slice(0, pidx), before])) ||
+          (after >= 0 && lib.array.equal(p.nesting, [...point.nesting.slice(0, pidx), after]))
+        )
+          acc[1].push(p.nesting);
+        else acc[0].push(p.nesting);
+
+        return acc;
+      },
+      [[], []] as number[][][],
     );
+    this.core.state.points.add("disabled", disabled);
+    this.core.state.points.remove("disabled", enabled);
     this.core.render("points", points);
     window.requestAnimationFrame(() => {
       this.core.state.points.set("hover", [point.nesting]);
@@ -405,7 +410,7 @@ export class MoveTool extends AnyTool {
   }
 
   private _renderPoints() {
-    const points = lib.createPoints(this.core.features, this.core.state.features.get("active")).filter(this.filter);
+    const points = lib.createPoints(this.core.features, this.core.state.features.get("active"));
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) {
       this.core.state.points.add(
         "disabled",
@@ -418,11 +423,11 @@ export class MoveTool extends AnyTool {
       );
       this.core.state.points.add(
         "disabled",
-        middlePoints.map((p) => p.nesting),
+        [...middlePoints, ...points].map((p) => p.nesting),
       );
       this.core.state.points.remove(
         "disabled",
-        points.map((p) => p.nesting),
+        points.filter(this.filter).map((p) => p.nesting),
       );
       this.core.render("points", [...points, ...middlePoints]);
     }
