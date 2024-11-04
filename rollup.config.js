@@ -9,11 +9,10 @@ import pkg from "./package.json";
 export default [
   {
     input: "src/index.ts",
-    output: {
-      name: "geoditor",
-      file: pkg.browser,
-      format: "umd",
-    },
+    output: [
+      { name: "geoditor", file: pkg.browser, format: "umd" },
+      { name: "geoditor", file: "docs/geoditor.min.js", format: "umd" },
+    ],
     plugins: [
       resolve(),
       commonjs(),
@@ -35,7 +34,6 @@ export default [
         exclude: ["node_modules/**"],
       }),
       typescript(),
-      uglify(),
     ],
   },
   {

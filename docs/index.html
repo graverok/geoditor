@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>Geoditor Demo</title>
+        <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel='stylesheet' />
+        <script src='https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js'></script>
+        <script src="geoditor.min.js"></script>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:ital,wght@0,300..900;1,300..900&display=swap" rel="stylesheet">
+        <style>
+            body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; font-size: 16px;
+                line-height: 20px; color: #444;}
+            #root { font-family: "Red Hat Display", -apple-system, sans-serif;  text-align: center; width: 100%; box-sizing: border-box}
+            #logo { position: absolute; z-index: 2; top: 0; left: 0; padding: 13px 15px 10px 20px; background: #FFF; color: #000; display: flex; flex-direction: column;  justify-content: flex-end;border-radius: 0 0 10px 0;}
+            h1 {font-size: 40px; line-height: 1.2em; font-weight: 900; margin: 0 0 0 -2px; display: inline; left: 40px; top: 30px;}
+            #logo > span { color: #999;display: flex; gap: 6px;font-weight: 500;font-size: 14px;line-height: 20px;}
+            a.link {color: #007AFF;font-weight: 700;display: inline-flex;text-decoration: none; transform: translate3d(0, 0, 0);transition-duration: 0.2s;}
+            a.link:hover {text-decoration: underline;}
+            a.link:active {transform: translate3d(0, 1px, 0);text-decoration: none;}
+            #controls { position: absolute;width: 100%; top: 30px; z-index: 1;  display: flex; gap: 8px; justify-content: center }
+            #controls .buttons { display: flex; gap:0; justify-content: flex-start; }
+            #controls .buttons > button { margin-left: -1px; cursor: pointer; appearance: none; border: 1px solid #ccc; background: #FFF; padding: 6px 14px; box-sizing: content-box; color: #000000;}
+            #controls .buttons > button:first-child { border-top-left-radius: 6px; border-bottom-left-radius: 6px;}
+            #controls .buttons > button:last-child { border-top-right-radius: 6px; border-bottom-right-radius: 6px;}
+            #controls .buttons > button.-danger { color: #FF3B30; }
+            #controls .buttons > button:disabled { color: #BBB !important; pointer-events: none; border: 1px solid #eee; }
+            #controls .buttons > button svg { margin: 0 -8px; display: block; }
+            #controls .buttons > button:hover:not(:disabled):not([aria-current="true"]) { color: #007AFF }
+            #controls .buttons > button[aria-current="true"] { background: #007AFF; color: #FFF; border: 1px solid #007AFF}
+            #map { position: absolute; left: 16px; right: 16px;  bottom: 16px; top: 16px; overflow: hidden; border-radius: 10px}
+
+        </style>
+    </head>
+    <body>
+        <noscript>You need to enable JavaScript to run this app.</noscript>
+        <div id="root">
+            <div id="header">
+                <div id="logo">
+                    <h1>Geoditor</h1>
+                    <span>
+                        <span>v0.3.0</span>
+                        <span>•</span>
+                        <a class="link" href="https://github.com/graverok/geoditor?tab=readme-ov-file#readme">See Docs</a>
+                    </span>
+                </div>
+
+                <div id="controls">
+                    <div class="buttons">
+                        <button id="hand" disabled>Hand</button>
+                    </div>
+                    <div class="buttons">
+                        <button id="move" disabled>Move</button>
+                        <button id="pen" disabled>Pen</button>
+                    </div>
+                    <div class="buttons">
+                        <button id="delete" class="-danger" disabled>Delete</button>
+                    </div>
+                </div>
+            </div>
+            <div id="map"></div>
+        </div>
+    </body>
+    <script src="./demo.js"></script>
+</html>

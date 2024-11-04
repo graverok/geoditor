@@ -1,5 +1,7 @@
-# geoditor
-Map GeoJSON geometry editor.
+# Geoditor
+Map GeoJSON geometry editor. **[See Demo](https://graverok.github.io/geoditor)**
+
+<img width="800" alt="geoditor" src="https://graverok.github.io/geoditor/cover.png" />
 
 Supported features:
 - `LineString`

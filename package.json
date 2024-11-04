@@ -1,11 +1,11 @@
 {
   "name": "geoditor",
-  "version": "0.2.7",
+  "version": "0.3.0",
   "author": {
     "name": "Aleksandr Gurianov",
     "url": "http://golova.pro"
   },
-  "homepage": "https://github.com/graverok/geoditor#readme",
+  "homepage": "https://graverok.github.io/geoditor",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/graverok/geoditor.git"
