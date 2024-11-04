@@ -25,6 +25,7 @@ type Config = {
 export class Geoditor {
   private _tool: string | undefined;
   private _tools!: Record<string, AnyTool>;
+  private _toolArgs: unknown[] = [];
   private readonly _core: Core;
   private readonly _controller: Controller;
   private _isLoaded = false;
@@ -106,11 +107,12 @@ export class Geoditor {
       (tools, key) => ({
         ...tools,
         [key]: (...args: Parameters<Tools[typeof key]>) => {
-          const current = this._tool;
-          this._tool = undefined;
-          current && this._tools[current]?.disable();
-          this._tool = key;
-          window.requestAnimationFrame(() => this._isLoaded && this._tools[key]?.enable(...args));
+          window.requestAnimationFrame(() => {
+            this._tool && this._tools[this._tool]?.disable();
+            this._tool = key;
+            if (this._isLoaded) return this._tools[key]?.enable(...args);
+            this._toolArgs = args;
+          });
           return this._tools[key].subscriber;
         },
       }),
@@ -168,20 +170,8 @@ export class Geoditor {
   private _onInit() {
     this._isLoaded = true;
     this._core.init();
-    this._tool && this._tools[this._tool]?.enable();
+    this._tool && this._tools[this._tool]?.enable(...this._toolArgs);
+    this._toolArgs = [];
     this._listeners.load.forEach((f) => f());
   }
 }
-
-const deleteFeatures = (features: Feature[], deletion: (number | number[])[]) => {
-  return features.reduce((acc, feature) => {
-    if (!deletion.some((n) => lib.array.plain(n) === feature.nesting[0])) return [...acc, feature];
-    if (deletion.some((n) => n === feature.nesting[0])) return acc;
-    const _shapes = deletion.filter((n) => lib.array.plain(n) === feature.nesting[0]) as number[][];
-    const mutated = (_shapes as number[][]).reduce<Feature | undefined>(
-      (mutating, nesting) => lib.mutateFeature(mutating, nesting),
-      feature,
-    );
-    return mutated ? [...acc, mutated] : acc;
-  }, [] as Feature[]);
-};
