@@ -1,14 +1,15 @@
+import * as geojson from "geojson";
 import { Controller, AnyTool, Core } from "./core";
 import { PenTool, MoveTool } from "./tools";
 import { Feature } from "./types";
 import * as lib from "./lib";
-import * as geojson from "geojson";
+import * as config from "./config";
 
 type Tools = {
   move: (...args: Parameters<MoveTool["enable"]>) => AnyTool["subscriber"];
   pen: (...args: Parameters<PenTool["enable"]>) => AnyTool["subscriber"];
   delete: (indices?: number[]) => void;
-  off: () => void;
+  hand: () => void;
 } & Record<string, (...args: Parameters<AnyTool["enable"]>) => AnyTool["subscriber"]>;
 
 const defaultTools = {
@@ -36,18 +37,17 @@ export class Geoditor {
   } = { load: [], select: [], change: [], render: [] };
 
   constructor(config: Config) {
-    this._core = new Core({
-      controller: config.controller,
-      onSelect: (next: (number | number[])[]) => {
+    this._core = new Core(config.controller, {
+      select: (next: (number | number[])[]) => {
         if (lib.array.equal(this._selected, next)) return;
         this._selected = next;
         this._listeners.select.forEach((f) => f(this._selected.map(lib.array.plain)));
       },
-      onChange: () => {
+      change: () => {
         this._listeners.change.forEach((f) => f(this.data));
         this._tool && this._tools[this._tool]?.refresh();
       },
-      onRender: (data: geojson.Feature[]) => {
+      render: (data: geojson.Feature[]) => {
         this._listeners.render.forEach((f) => f(data));
       },
     });
@@ -110,7 +110,7 @@ export class Geoditor {
           this._tool = undefined;
           current && this._tools[current]?.disable();
           this._tool = key;
-          this._isLoaded && this._tools[key]?.enable(...args);
+          window.requestAnimationFrame(() => this._isLoaded && this._tools[key]?.enable(...args));
           return this._tools[key].subscriber;
         },
       }),
@@ -121,13 +121,24 @@ export class Geoditor {
           if (this._tool && this._tools[this._tool]?.delete(_deletion)) return;
           this._core.features = deleteFeatures(this._core.features, _deletion);
         },
-        off: () => {
+        hand: () => {
           this._tool && this._tools[this._tool]?.disable();
-          this._tool = undefined;
+          this._tool = "hand";
           this._core.reset();
         },
       } as Tools,
     );
+  }
+
+  public icon(key: keyof typeof this.tools, stroke?: number, color?: string) {
+    switch (key) {
+      case "delete":
+        return lib.createIcon(`<g fill="none" transform="translate(-4 -4)">${config.deleteShape}</g>`, stroke, color);
+      case "hand":
+        return lib.createIcon(`<g fill="none" transform="translate(-4 -4)">${config.handShape}</g>`, stroke, color);
+      default:
+        return lib.createIcon(this._tools[key].icon, stroke, color);
+    }
   }
 
   public remove() {

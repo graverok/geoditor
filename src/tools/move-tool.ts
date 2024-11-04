@@ -27,6 +27,10 @@ export class MoveTool extends AnyTool {
     this.onKeyPress = this.onKeyPress.bind(this);
   }
 
+  get icon() {
+    return `<g fill="none" transform="translate(-4 -4)">${iconShape}</g>`;
+  }
+
   public refresh() {
     this.core.render("features", this.core.features);
     this.core.isolate();
@@ -70,15 +74,14 @@ export class MoveTool extends AnyTool {
     return;
   }
 
-  protected generateCursor = (key: string, fallback: string) => {
+  protected cursor = (key: string, fallback: string) => {
     return `url(${lib.createCursor(
-      {
-        shape: `<path d="M10 8L13.6229 24.8856L17.3004 18.4261L24.6282 17.1796L10 8Z" fill="none" stroke="white" stroke-linejoin="round" stroke-width="1.2"/>`,
-        contour: `<path fill-rule="evenodd" clip-rule="evenodd" d="M9.71322 7.59042C9.87786 7.47514 10.0955 7.46965 10.2658 7.57648L24.894 16.7561C25.0696 16.8663 25.159 17.0736 25.1186 17.277C25.0783 17.4804 24.9165 17.6378 24.7121 17.6725L17.6178 18.8793L14.0574 25.133C13.9548 25.3132 13.7516 25.4114 13.5466 25.3798C13.3417 25.3482 13.1775 25.1933 13.134 24.9905L9.51113 8.10489C9.46897 7.90837 9.54858 7.70571 9.71322 7.59042Z" fill="black" stroke="none"/>`,
-        translate: { x: 2, y: -1 },
-      },
+      `<g fill="none" stroke="#FFF">${iconShape}</g>`,
+      `<g fill="#000" stroke="#000">${iconShape}</g>`,
       key,
-    )}) 12 7, ${fallback}`;
+      "#000",
+      "-2.5 0",
+    )}) 10 8, ${fallback}`;
   };
 
   protected onCanvasLeave() {
@@ -94,7 +97,7 @@ export class MoveTool extends AnyTool {
     let shapes = [...points, ...lines, ...planes].map((f) => f.nesting);
 
     if (this.core.state.features.get("active").every((n) => typeof n === "number")) {
-      this.core.setCursor(shapes.length ? this.generateCursor("default", "pointer") : "default");
+      this.core.setCursor(shapes.length ? this.cursor("default", "pointer") : "default");
       this.core.state.features.set("hover", shapes.length ? [lib.array.plain(shapes[0])] : []);
       return;
     }
@@ -104,7 +107,7 @@ export class MoveTool extends AnyTool {
     );
 
     if (shapes.length) {
-      this.core.setCursor(this.generateCursor(points.length ? "point" : lines.length ? "line" : "polygon", "pointer"));
+      this.core.setCursor(this.cursor(points.length ? "point" : lines.length ? "line" : "polygon", "pointer"));
       this.core.state.features.set("hover", shapes.length ? [shapes[0]] : []);
     } else {
       this.core.setCursor("default");
@@ -249,7 +252,7 @@ export class MoveTool extends AnyTool {
   protected onPointHover(e: SourceEvent) {
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
     let point = e.points.filter(this.filter)[0];
-    console.log(point);
+    if (!point) return;
     !this._state.dragging && this.core.state.points.set("hover", [point.nesting]);
 
     const _onMove = (ev: SourceEvent) => {
@@ -433,6 +436,8 @@ export class MoveTool extends AnyTool {
     }
   }
 }
+
+const iconShape = `<path d="M10 8L13.6229 24.8856L17.3004 18.4261L24.6282 17.1796L10 8Z" stroke-linejoin="round"/>`;
 
 const createMiddlePoints = (features: Feature[], focused: (number | number[])[]): Point[] => {
   return focused.reduce((acc, nesting) => {

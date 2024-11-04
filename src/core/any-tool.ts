@@ -33,6 +33,10 @@ export abstract class AnyTool {
     this.subscriptions = {};
   }
 
+  public get icon(): string {
+    return "";
+  }
+
   protected filter = (shape: Shape) => {
     return this.subscriptions.filter?.(shape) ?? true;
   };
