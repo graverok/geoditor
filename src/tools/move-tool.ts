@@ -70,10 +70,6 @@ export class MoveTool extends AnyTool {
     this._stored.cursor?.();
   }
 
-  delete() {
-    return;
-  }
-
   protected cursor = (key: string, fallback: string) => {
     return `url(${lib.createCursor(
       `<g fill="none" stroke="#FFF">${iconShape}</g>`,

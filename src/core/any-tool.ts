@@ -28,8 +28,11 @@ export abstract class AnyTool {
   public abstract enable(): void;
   public abstract enable(...args: unknown[]): void;
   public abstract refresh(): void;
-  public abstract delete(indices?: (number | number[])[]): boolean | void;
-  public disable() {
+  public delete(indices?: (number | number[])[]): boolean | void;
+  public delete(): boolean | void {
+    return;
+  }
+  public disable(): void {
     this.subscriptions = {};
   }
 

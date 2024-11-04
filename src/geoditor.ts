@@ -119,7 +119,25 @@ export class Geoditor {
           const _deletion = indices || this._core.state.features.get("active");
           if (!_deletion.length) return;
           if (this._tool && this._tools[this._tool]?.delete(_deletion)) return;
-          this._core.features = deleteFeatures(this._core.features, _deletion);
+
+          let unselect = false;
+          this._core.features = this._core.features.reduce((acc, feature) => {
+            if (!_deletion.some((n) => lib.array.plain(n) === feature.nesting[0])) return [...acc, feature];
+            if (_deletion.some((n) => n === feature.nesting[0])) {
+              unselect = true;
+              return acc;
+            }
+            const _shapes = _deletion.filter((n) => lib.array.plain(n) === feature.nesting[0]) as number[][];
+            const mutated = (_shapes as number[][]).reduce<Feature | undefined>(
+              (mutating, nesting) => lib.mutateFeature(mutating, nesting),
+              feature,
+            );
+            if (mutated) return [...acc, mutated];
+            unselect = true;
+            return acc;
+          }, [] as Feature[]);
+
+          unselect && this._core.state.features.set("active", []);
         },
         hand: () => {
           this._tool && this._tools[this._tool]?.disable();
