@@ -1,20 +1,21 @@
 import * as geojson from "geojson";
 import { Controller, AnyTool, Core } from "./core";
-import { PenTool, MoveTool } from "./tools";
-import { Feature } from "./types";
+import { PenTool, MoveTool, HandTool, DeleteTool } from "./tools";
 import * as lib from "./lib";
 import * as config from "./config";
 
 type Tools = {
-  move: (...args: Parameters<MoveTool["enable"]>) => AnyTool["subscriber"];
-  pen: (...args: Parameters<PenTool["enable"]>) => AnyTool["subscriber"];
-  delete: (indices?: number[]) => void;
-  hand: () => void;
-} & Record<string, (...args: Parameters<AnyTool["enable"]>) => AnyTool["subscriber"]>;
+  move: (...args: Parameters<MoveTool["start"]>) => VoidFunction;
+  pen: (...args: Parameters<PenTool["start"]>) => VoidFunction;
+  hand: (...args: Parameters<HandTool["start"]>) => VoidFunction;
+  delete: (indices?: number[]) => VoidFunction;
+} & Record<string, (...args: Parameters<AnyTool["start"]>) => VoidFunction>;
 
 const defaultTools = {
   move: new MoveTool(),
   pen: new PenTool(),
+  hand: new HandTool(),
+  delete: new DeleteTool(),
 };
 
 type Config = {
@@ -25,7 +26,7 @@ type Config = {
 export class Geoditor {
   private _tool: string | undefined;
   private _tools!: Record<string, AnyTool>;
-  private _toolArgs: unknown[] = [];
+  private _toolLoader: VoidFunction | undefined;
   private readonly _core: Core;
   private readonly _controller: Controller;
   private _isLoaded = false;
@@ -107,46 +108,43 @@ export class Geoditor {
       (tools, key) => ({
         ...tools,
         [key]: (...args: Parameters<Tools[typeof key]>) => {
-          window.requestAnimationFrame(() => {
-            this._tool && this._tools[this._tool]?.disable();
-            this._tool = key;
-            if (this._isLoaded) return this._tools[key]?.enable(...args);
-            this._toolArgs = args;
-          });
-          return this._tools[key].subscriber;
+          const current = this._tool && this._tool !== key ? this._tools[this._tool] : undefined;
+          const loader = () => {
+            const res = this._tools[key]?.on(current, ...args);
+            if (res !== false) this._tool = key;
+          };
+
+          if (this._isLoaded) loader();
+          else this._toolLoader = loader;
+          return () => this._tools[key].off();
         },
       }),
-      {
-        delete: (indices?: number[]) => {
-          const _deletion = indices || this._core.state.features.get("active");
-          if (!_deletion.length) return;
-          if (this._tool && this._tools[this._tool]?.delete(_deletion)) return;
-
-          let unselect = false;
-          this._core.features = this._core.features.reduce((acc, feature) => {
-            if (!_deletion.some((n) => lib.array.plain(n) === feature.nesting[0])) return [...acc, feature];
-            if (_deletion.some((n) => n === feature.nesting[0])) {
-              unselect = true;
-              return acc;
-            }
-            const _shapes = _deletion.filter((n) => lib.array.plain(n) === feature.nesting[0]) as number[][];
-            const mutated = (_shapes as number[][]).reduce<Feature | undefined>(
-              (mutating, nesting) => lib.mutateFeature(mutating, nesting),
-              feature,
-            );
-            if (mutated) return [...acc, mutated];
-            unselect = true;
-            return acc;
-          }, [] as Feature[]);
-
-          unselect && this._core.state.features.set("active", []);
-        },
-        hand: () => {
-          this._tool && this._tools[this._tool]?.disable();
-          this._tool = "hand";
-          this._core.reset();
-        },
-      } as Tools,
+      // {
+      //   delete: (indices?: number[]) => {
+      //     const _deletion = indices || this._core.state.features.get("active");
+      //     if (!_deletion.length) return;
+      //     if (this._tool && this._tools[this._tool]?.delete(_deletion)) return;
+      //
+      //     let unselect = false;
+      //     this._core.features = this._core.features.reduce((acc, feature) => {
+      //       if (!_deletion.some((n) => lib.array.plain(n) === feature.nesting[0])) return [...acc, feature];
+      //       if (_deletion.some((n) => n === feature.nesting[0])) {
+      //         unselect = true;
+      //         return acc;
+      //       }
+      //       const _shapes = _deletion.filter((n) => lib.array.plain(n) === feature.nesting[0]) as number[][];
+      //       const mutated = (_shapes as number[][]).reduce<Feature | undefined>(
+      //         (mutating, nesting) => lib.mutateFeature(mutating, nesting),
+      //         feature,
+      //       );
+      //       if (mutated) return [...acc, mutated];
+      //       unselect = true;
+      //       return acc;
+      //     }, [] as Feature[]);
+      //
+      //     unselect && this._core.state.features.set("active", []);
+      //   },
+      {} as Tools,
     );
   }
 
@@ -162,7 +160,7 @@ export class Geoditor {
   }
 
   public remove() {
-    this._tool && this._tools[this._tool]?.disable();
+    this._tool && this._tools[this._tool]?.finish();
     this._controller.remove();
     this._core.remove();
   }
@@ -170,8 +168,7 @@ export class Geoditor {
   private _onInit() {
     this._isLoaded = true;
     this._core.init();
-    this._tool && this._tools[this._tool]?.enable(...this._toolArgs);
-    this._toolArgs = [];
+    this._toolLoader?.();
     this._listeners.load.forEach((f) => f());
   }
 }

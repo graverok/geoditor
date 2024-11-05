@@ -5,6 +5,10 @@ import { Controller } from "./controller";
 import { StateManager } from "./state-manager";
 import { array, traverseCoordinates } from "../lib";
 
+/** TODO:
+ * [ ] Add renderer lock/unlock move and remove dragPan disabling from mousedown events
+ */
+
 export class Core {
   public addListener;
   public removeListener;
@@ -139,6 +143,7 @@ export class Core {
               type: item.type,
               coordinates: item.coordinates,
             },
+            properties: item.props,
           } as geojson.Feature)
         : ({
             type: "Feature",

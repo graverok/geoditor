@@ -1,21 +1,26 @@
 import { AnyTool } from "../core";
 import * as lib from "../lib";
-import { Feature, KeyModifier, LayerType, Point, Position, SourceEvent } from "../types";
+import { Feature, FilterHandler, KeyModifier, LayerType, Point, Position, SourceEvent } from "../types";
 import { array, getModifierKey } from "../lib";
 
 export interface MoveToolConfig {
   modify: boolean | "dblclick" | "alt" | "meta" | "ctrl";
+  filter: FilterHandler;
 }
 
 export class MoveTool extends AnyTool {
   declare config: MoveToolConfig;
-  private _state: { dragging: boolean; modifiers: ("alt" | "meta" | "ctrl")[] } = { dragging: false, modifiers: [] };
+  private _state: { dragging: boolean; modifiers: ("alt" | "meta" | "ctrl")[]; features?: Feature[] } = {
+    dragging: false,
+    modifiers: [],
+  };
   private _stored: { cursor?: () => void } = {};
   private _event: SourceEvent | null = null;
 
   constructor(config?: MoveToolConfig) {
     super({
       modify: config?.modify ?? true,
+      filter: config?.filter ?? (() => true),
     });
     this.onCanvasClick = this.onCanvasClick.bind(this);
     this.onCanvasLeave = this.onCanvasLeave.bind(this);
@@ -32,12 +37,14 @@ export class MoveTool extends AnyTool {
   }
 
   public refresh() {
-    this.core.render("features", this.core.features);
+    this.core.render("features", this._state.features ?? this.core.features);
     this.core.isolate();
     this._renderPoints();
   }
 
   public enable() {
+    if (!this.disabled) return;
+    super.enable();
     this._stored.cursor = this.core.setCursor("default");
     this.core.addListener("mouseout", this.onCanvasLeave);
     this.core.addListener("mouseenter", "points", this.onPointHover);
@@ -50,12 +57,12 @@ export class MoveTool extends AnyTool {
     this.core.addListener("dblclick", "planes", this.onGeometryDblClick);
     document.addEventListener("keydown", this.onKeyPress);
     document.addEventListener("keyup", this.onKeyPress);
-    this.core.isolate();
-    this._renderPoints();
   }
 
   public disable() {
+    if (this.disabled) return;
     super.disable();
+    this._stored.cursor?.();
     document.removeEventListener("keydown", this.onKeyPress);
     document.removeEventListener("keyup", this.onKeyPress);
     this.core.removeListener("mousedown", "points", this.onPointDrag);
@@ -67,7 +74,22 @@ export class MoveTool extends AnyTool {
     this.core.removeListener("click", this.onCanvasClick);
     this.core.removeListener("mousemove", this.onFeatureHover);
     this.core.removeListener("mouseout", this.onCanvasLeave);
-    this._stored.cursor?.();
+  }
+
+  public start() {
+    super.start();
+    this.core.isolate();
+    if (this._state.features) this.core.render("features", this._state.features);
+    this._renderPoints();
+  }
+
+  public finish() {
+    super.finish();
+    if (this._state.features) this.core.features = this._state.features;
+    this._state = {
+      dragging: false,
+      modifiers: [],
+    };
   }
 
   protected cursor = (key: string, fallback: string) => {
@@ -87,9 +109,9 @@ export class MoveTool extends AnyTool {
   protected onFeatureHover(e: SourceEvent) {
     if (this._state.dragging) return;
     this._event = e;
-    const points = e.points.filter(this.filter);
-    const lines = e.lines.filter(this.filter);
-    const planes = e.planes.filter(this.filter);
+    const points = e.points.filter(this.config.filter);
+    const lines = e.lines.filter(this.config.filter);
+    const planes = e.planes.filter(this.config.filter);
     let shapes = [...points, ...lines, ...planes].map((f) => f.nesting);
 
     if (this.core.state.features.get("active").every((n) => typeof n === "number")) {
@@ -134,11 +156,11 @@ export class MoveTool extends AnyTool {
 
   protected onGeometryMouseDown(e: SourceEvent) {
     if (
-      e.points.filter(this.filter).length &&
+      e.points.filter(this.config.filter).length &&
       !this.core.state.features.get("active").some((n) => typeof n === "number")
     )
       return;
-    if (e.layer === "planes" && e.lines.filter(this.filter).length) return;
+    if (e.layer === "planes" && e.lines.filter(this.config.filter).length) return;
     const geometry = e[e.layer as LayerType][0];
     if (!geometry) return;
 
@@ -156,20 +178,18 @@ export class MoveTool extends AnyTool {
     if (!state) return;
     this.core.state.features.set("active", state.active);
     this._renderPoints();
-    let features = this.core.features;
     this._state.dragging = true;
-    let isChanged = false;
 
     const _onMove = (ev: SourceEvent) => {
-      if (!isChanged) {
+      if (!this._state.features) {
         if (
           Math.abs(ev.originalEvent.pageX - e.originalEvent.pageX) <= 3 &&
           Math.abs(ev.originalEvent.pageY - e.originalEvent.pageY) <= 3
         )
           return;
-        isChanged = true;
       }
-      features = this.core.features.map((item) => {
+
+      this._state.features = this.core.features.map((item) => {
         const focused = this.core.state.features.get("active").filter((n) => lib.array.plain(n) === item.nesting[0]);
         if (!focused.length) return item;
         return lib.traverseCoordinates(item, (positions, indices) =>
@@ -178,21 +198,26 @@ export class MoveTool extends AnyTool {
             : positions,
         );
       });
-      this.core.render("features", features);
+
+      if (this.disabled) return;
+      this.core.render("features", this._state.features);
       this.core.render(
         "points",
-        lib.createPoints(features, this.core.state.features.get("active")).filter(this.filter),
+        lib.createPoints(this._state.features, this.core.state.features.get("active")).filter(this.config.filter),
       );
     };
 
     const _onFinish = () => {
       this.core.removeListener("mousemove", _onMove);
       this._state.dragging = false;
-      if (isChanged) {
+      if (this.disabled) return;
+
+      if (this._state.features) {
         if (current.active.map(array.plain).includes(geometry.nesting[0]))
           this.core.state.features.set("active", current.active);
         this.core.state.features.set("hover", current.hover);
-        this.core.features = features;
+        if (this._state.features) this.core.features = this._state.features;
+        this._state.features = undefined;
       } else {
         const released = state.release?.();
         if (released) {
@@ -212,11 +237,11 @@ export class MoveTool extends AnyTool {
     if (this.config.modify !== "dblclick") return;
 
     if (
-      e.points.filter(this.filter).length &&
+      e.points.filter(this.config.filter).length &&
       !this.core.state.features.get("active").some((n) => typeof n === "number")
     )
       return;
-    if (e.layer === "planes" && e.lines.filter(this.filter).length) return;
+    if (e.layer === "planes" && e.lines.filter(this.config.filter).length) return;
     const geometry = e[e.layer as LayerType][0];
     if (!geometry) return;
     this.core.state.features.set("active", [[geometry.nesting[0]]]);
@@ -247,14 +272,14 @@ export class MoveTool extends AnyTool {
 
   protected onPointHover(e: SourceEvent) {
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
-    let point = e.points.filter(this.filter)[0];
+    let point = e.points.filter(this.config.filter)[0];
     if (!point) return;
     !this._state.dragging && this.core.state.points.set("hover", [point.nesting]);
 
     const _onMove = (ev: SourceEvent) => {
       if (this._state.dragging) return;
       if (lib.array.equal(ev.points[0].nesting ?? [], point.nesting)) return;
-      point = ev.points.filter(this.filter)[0];
+      point = ev.points.filter(this.config.filter)[0];
       this.core.state.points.set("hover", [point.nesting]);
     };
 
@@ -270,7 +295,7 @@ export class MoveTool extends AnyTool {
 
   protected onPointDrag(e: SourceEvent) {
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
-    const point = e.points.filter(this.filter)[0];
+    const point = e.points.filter(this.config.filter)[0];
     let feature = this.core.getFeatures([point?.nesting[0]])[0];
     if (!point || !feature) return;
 
@@ -279,7 +304,6 @@ export class MoveTool extends AnyTool {
 
     const pidx = point.nesting.length - 1;
     let positions = lib.toPositions(lib.getCoordinates(feature, point.nesting.slice(0, pidx)), feature.type);
-    let isChanged = false;
 
     const _updater = (feature: Feature, next?: Position) =>
       lib.traverseCoordinates(feature, (coordinates, indices) =>
@@ -296,8 +320,6 @@ export class MoveTool extends AnyTool {
       );
 
     if (point.nesting[pidx] >= positions.length) {
-      isChanged = true;
-
       point.nesting[pidx] = (point.nesting[pidx] % positions.length) + 1;
 
       positions = [
@@ -305,11 +327,18 @@ export class MoveTool extends AnyTool {
         point.coordinates,
         ...positions.slice(point.nesting[pidx]),
       ];
+
       feature = lib.traverseCoordinates(feature, (coordinates, indices) =>
         lib.array.equal(point.nesting.slice(0, indices.length), indices)
           ? lib.toCoordinates(positions, feature?.type)
           : coordinates,
       );
+
+      this._state.features = [
+        ...this.core.features.slice(0, point.nesting[0]),
+        feature,
+        ...this.core.features.slice(point.nesting[0] + 1),
+      ];
     }
 
     const _onPointMove = (ev: SourceEvent) => {
@@ -324,17 +353,17 @@ export class MoveTool extends AnyTool {
     };
 
     const _onMove = (ev: SourceEvent) => {
-      if (!feature) return;
-      isChanged = true;
       feature = _updater(
         feature,
         lib.point.normalize(sibling?.coordinates || lib.point.move(point.coordinates, e.position, ev.position)),
       );
-      this.core.render("features", [
+      this._state.features = [
         ...this.core.features.slice(0, point.nesting[0]),
         feature,
         ...this.core.features.slice(point.nesting[0] + 1),
-      ]);
+      ];
+      if (this.disabled) return;
+      this.core.render("features", this._state.features);
       this.core.render("points", lib.createPoints([feature], this.core.state.features.get("active")));
     };
 
@@ -342,15 +371,16 @@ export class MoveTool extends AnyTool {
       this.core.removeListener("mousemove", _onMove);
       this.core.removeListener("mousemove", "points", _onPointMove);
       this.core.removeListener("mouseleave", "points", _onPointLeave);
-
-      if (!feature) return;
+      this._state.dragging = false;
+      if (this.disabled) return;
       this.core.state.points.set("active", []);
 
-      if (isChanged) {
-        if (sibling && this.filter(sibling)) {
+      if (this._state.features) {
+        if (sibling && this.config.filter(sibling)) {
           this.core.state.points.set("hover", [sibling?.nesting[pidx] === before ? sibling.nesting : point.nesting]);
         }
 
+        this._state.features = undefined;
         this.core.features = [
           ...this.core.features.slice(0, point.nesting[0]),
           sibling && lib.array.equal(sibling.nesting.slice(0, pidx), point.nesting.slice(0, pidx))
@@ -360,7 +390,6 @@ export class MoveTool extends AnyTool {
         ];
       }
       this._renderPoints();
-      this._state.dragging = false;
       this.onKeyPress(ev);
       this.onFeatureHover(e);
     };
@@ -409,7 +438,7 @@ export class MoveTool extends AnyTool {
   }
 
   private _renderPoints() {
-    const points = lib.createPoints(this.core.features, this.core.state.features.get("active"));
+    const points = lib.createPoints(this._state.features ?? this.core.features, this.core.state.features.get("active"));
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) {
       this.core.state.points.add(
         "disabled",
@@ -417,16 +446,17 @@ export class MoveTool extends AnyTool {
       );
       this.core.render("points", points);
     } else {
-      const middlePoints = createMiddlePoints(this.core.features, this.core.state.features.get("active")).filter(
-        this.filter,
-      );
+      const middlePoints = createMiddlePoints(
+        this._state.features ?? this.core.features,
+        this.core.state.features.get("active"),
+      ).filter(this.config.filter);
       this.core.state.points.add(
         "disabled",
         [...middlePoints, ...points].map((p) => p.nesting),
       );
       this.core.state.points.remove(
         "disabled",
-        points.filter(this.filter).map((p) => p.nesting),
+        points.filter(this.config.filter).map((p) => p.nesting),
       );
       this.core.render("points", [...points, ...middlePoints]);
     }

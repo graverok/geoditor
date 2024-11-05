@@ -1,13 +1,19 @@
 import { AnyTool } from "../core";
-import { GeometryType, Feature, Point, Position, SourceEvent, KeyModifier } from "../types";
+import { GeometryType, Feature, Point, Position, SourceEvent, KeyModifier, FilterHandler } from "../types";
 import * as config from "../config";
 import * as lib from "../lib";
+
+/** TODO:
+ *  [ ] Refactor click events with mousedown/mouseup
+ *  [ ] Hide placeholder line on disabling and render it on enabling
+ *  */
 
 export interface PenToolConfig {
   types: GeometryType[];
   create: boolean | "alt" | "shift" | "ctrl" | "meta";
   subtract: boolean | "alt" | "shift" | "ctrl" | "meta";
   append: boolean | "alt" | "shift" | "ctrl" | "meta";
+  filter: FilterHandler;
 }
 
 export class PenTool extends AnyTool {
@@ -40,6 +46,7 @@ export class PenTool extends AnyTool {
       create: config?.create ?? true,
       append: config?.append ?? true,
       subtract: config?.subtract ?? true,
+      filter: config?.filter ?? (() => true),
     });
     this.onCanvasMouseMove = this.onCanvasMouseMove.bind(this);
     this.onCanvasClick = this.onCanvasClick.bind(this);
@@ -59,7 +66,7 @@ export class PenTool extends AnyTool {
     }</g>`;
   }
 
-  public enable(props?: Record<string, unknown>) {
+  public start(props?: Record<string, unknown>) {
     if (!this.config.types.length) {
       this.core.isolate([]);
       this._stored.cursor = this.core.setCursor(this.cursor("disabled", "not-allowed"));
@@ -67,10 +74,16 @@ export class PenTool extends AnyTool {
       return;
     }
 
-    this._state.props = props;
-    this._stored.cursor = this.core.setCursor(this.cursor("default", "crosshair"));
+    super.start();
+    this._state.props = props ?? this._state.props;
     this.refresh();
+  }
 
+  public enable() {
+    console.log("ENABLE");
+    if (!this.disabled) return;
+    super.enable();
+    this._stored.cursor = this.core.setCursor(this.cursor("default", "crosshair"));
     this.core.addListener("mouseenter", "points", this.onPointMouseEnter);
     this.core.addListener("mousedown", "points", this.onPointMouseDown);
     this.core.addListener("mousemove", this.onCanvasMouseMove);
@@ -78,6 +91,26 @@ export class PenTool extends AnyTool {
     this.core.addListener("mouseout", this.onCanvasLeave);
     document.addEventListener("keydown", this.onKeyPress);
     document.addEventListener("keyup", this.onKeyPress);
+  }
+
+  public disable() {
+    console.log("DISABLE");
+    if (this.disabled) return;
+    super.disable();
+    this._stored.cursor?.();
+    document.removeEventListener("keydown", this.onKeyPress);
+    document.removeEventListener("keyup", this.onKeyPress);
+    this.core.removeListener("mouseout", this.onCanvasLeave);
+    this.core.removeListener("mousemove", this.onCanvasMouseMove);
+    this.core.removeListener("click", this.onCanvasClick);
+    this.core.removeListener("mousedown", "points", this.onPointMouseDown);
+    this.core.removeListener("mouseenter", "points", this.onPointMouseEnter);
+  }
+
+  public finish() {
+    super.finish();
+    this._save();
+    this._state = { modes: {}, props: this._state.props };
   }
 
   public delete(indices: number[]): boolean | void {
@@ -103,7 +136,7 @@ export class PenTool extends AnyTool {
     if (this._state.geometry) {
       const active = this.core.state.features.get("active");
       if (active.length && !active.map(lib.array.plain).includes(lib.array.plain(this._state.nesting ?? []))) {
-        this._finish(active);
+        this._save(active);
         this._reset();
         this._isolate({});
         return;
@@ -122,19 +155,6 @@ export class PenTool extends AnyTool {
     this._isolate({});
   }
 
-  public disable() {
-    super.disable();
-    document.removeEventListener("keydown", this.onKeyPress);
-    document.removeEventListener("keyup", this.onKeyPress);
-    this.core.removeListener("mouseout", this.onCanvasLeave);
-    this.core.removeListener("mousemove", this.onCanvasMouseMove);
-    this.core.removeListener("click", this.onCanvasClick);
-    this.core.removeListener("mousedown", "points", this.onPointMouseDown);
-    this.core.removeListener("mouseenter", "points", this.onPointMouseEnter);
-    this._stored.cursor?.();
-    this._finish();
-  }
-
   protected cursor(key: string, fallback: string) {
     return `url(${lib.createCursor(
       `<g fill="none" stroke="#000">${iconCenter}${iconShape}</g>`,
@@ -149,10 +169,11 @@ export class PenTool extends AnyTool {
 
   protected onCanvasMouseMove(e: SourceEvent) {
     this._state.event = e;
+    if (this.disabled) return;
 
     if (this._state.geometry) {
       const point = e.points
-        .filter(this.filter)
+        .filter(this.config.filter)
         .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
       if (point) {
         this._render(undefined, point);
@@ -177,7 +198,7 @@ export class PenTool extends AnyTool {
 
     if (this._state.modes.extend) {
       const point = e.points
-        .filter(this.filter)
+        .filter(this.config.filter)
         .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
       if (point) {
         return this.core.setCursor(this.cursor("extend", "crosshair"));
@@ -186,7 +207,7 @@ export class PenTool extends AnyTool {
 
     if (this._state.modes.subtract) {
       const disabled = this.core.state.features.get("disabled").map(lib.array.plain);
-      const plane = e.planes.filter(this.filter).find((p) => !disabled.includes(p.nesting[0]));
+      const plane = e.planes.filter(this.config.filter).find((p) => !disabled.includes(p.nesting[0]));
       this.core.state.points.set("hover", []);
       if (plane) {
         this.core.state.features.set("hover", [plane.nesting]);
@@ -204,7 +225,9 @@ export class PenTool extends AnyTool {
   }
 
   protected onPointMouseEnter(e: SourceEvent) {
-    const point = e.points.filter(this.filter).find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+    const point = e.points
+      .filter(this.config.filter)
+      .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
     if (!point) return;
 
     const _onMove = (ev: SourceEvent) => {
@@ -224,7 +247,9 @@ export class PenTool extends AnyTool {
   }
 
   protected onPointMouseDown(e: SourceEvent) {
-    const point = e.points.filter(this.filter).find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+    const point = e.points
+      .filter(this.config.filter)
+      .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
     if (!point) return;
     this.core.state.points.add("active", [point.nesting]);
     document.addEventListener("mouseup", () => this.core.state.points.remove("active", [point.nesting]), {
@@ -239,7 +264,9 @@ export class PenTool extends AnyTool {
   }
 
   private _initDraw(e: SourceEvent) {
-    const point = e.points.filter(this.filter).find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+    const point = e.points
+      .filter(this.config.filter)
+      .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
 
     if (point) {
       if (this._state.modes.extend) {
@@ -257,11 +284,10 @@ export class PenTool extends AnyTool {
 
     const active = this.core.state.features.get("active").map(lib.array.plain);
     if (this._state.modes.subtract) {
-      const plane = e.planes.filter(this.filter).find((p) => active.includes(p.nesting[0]));
+      const plane = e.planes.filter(this.config.filter).find((p) => active.includes(p.nesting[0]));
       if (plane) {
         this._state.feature = this.core.getFeatures([plane.nesting[0]])[0];
         if (!this._state.feature) return;
-
         this._state.nesting =
           this._state.feature.type === "Polygon"
             ? [...plane.nesting, this._state.feature.coordinates.length]
@@ -310,8 +336,10 @@ export class PenTool extends AnyTool {
   }
 
   private _addDrawPoint(e: SourceEvent, geometry: Position[]) {
-    const point = e.points.filter(this.filter).find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
-    if (point) return this._finishDraw(point);
+    const point = e.points
+      .filter(this.config.filter)
+      .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+    if (point) return this._endDraw(point);
 
     /* Add draw point */
     this._state.geometry = this._state.reversed ? [e.position, ...geometry] : [...geometry, e.position];
@@ -320,7 +348,7 @@ export class PenTool extends AnyTool {
     return;
   }
 
-  private _finishDraw(point: Point) {
+  private _endDraw(point: Point) {
     const feature = this._mutateFeature(this._getShapeGeometry(), point) as Feature;
     this.core.state.points.remove("hover", [point.nesting]);
     if (!this._stored.active.some((n) => Array.isArray(n)))
@@ -432,7 +460,7 @@ export class PenTool extends AnyTool {
             props: _props,
           },
         ] as Point[]
-      ).filter(this.filter),
+      ).filter(this.config.filter),
     );
   }
 
@@ -456,7 +484,7 @@ export class PenTool extends AnyTool {
       "active",
       this.core.state.features.get("active").filter((n) => _indices.includes(lib.array.plain(n))),
     );
-    this.core.render("points", lib.createPoints(this.core.features, _indices).filter(this.filter));
+    this.core.render("points", lib.createPoints(this.core.features, _indices).filter(this.config.filter));
     this.core.render("features", this.core.features);
 
     const points: Point[] = [];
@@ -481,7 +509,7 @@ export class PenTool extends AnyTool {
       points.map((p) => p.nesting),
     );
     this.core.state.points.set("active", []);
-    this.core.render("points", points.filter(this.filter));
+    this.core.render("points", points.filter(this.config.filter));
 
     this.core.isolate(_indices.map(lib.array.array));
 
@@ -499,7 +527,7 @@ export class PenTool extends AnyTool {
     return;
   }
 
-  private _finish(selected?: (number | number[])[]) {
+  private _save(selected?: (number | number[])[]) {
     if (!this._state.nesting) return this.core.state.features.set("active", selected ?? this._stored.active);
 
     const _geometry = this._getShapeGeometry();
