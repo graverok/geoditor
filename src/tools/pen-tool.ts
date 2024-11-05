@@ -5,7 +5,7 @@ import * as lib from "../lib";
 
 /** TODO:
  *  [ ] Refactor click events with mousedown/mouseup
- *  [ ] Hide placeholder line on disabling and render it on enabling
+ *  [×] Hide placeholder line on disabling and render it on enabling
  *  */
 
 export interface PenToolConfig {
@@ -20,14 +20,15 @@ export class PenTool extends AnyTool {
   declare config: PenToolConfig;
   protected _state: {
     modes: Record<string, boolean>;
+    reversed: boolean;
     geometry?: Position[];
     feature?: Feature;
-    reversed?: boolean;
     event?: SourceEvent;
     props?: Record<string, unknown>;
     nesting?: number[];
   } = {
     modes: {},
+    reversed: false,
   };
   protected _stored: {
     cursor?: () => void;
@@ -75,18 +76,19 @@ export class PenTool extends AnyTool {
     }
 
     super.start();
+    this.core.addListener("mousemove", this.onCanvasMouseMove);
     this._state.props = props ?? this._state.props;
-    this.refresh();
+    this._stored.active = this.core.state.features.get("active");
+    this._isolate({});
   }
 
   public enable() {
-    console.log("ENABLE");
     if (!this.disabled) return;
     super.enable();
     this._stored.cursor = this.core.setCursor(this.cursor("default", "crosshair"));
+    this._state.event && this.onCanvasMouseMove(this._state.event);
     this.core.addListener("mouseenter", "points", this.onPointMouseEnter);
     this.core.addListener("mousedown", "points", this.onPointMouseDown);
-    this.core.addListener("mousemove", this.onCanvasMouseMove);
     this.core.addListener("click", this.onCanvasClick);
     this.core.addListener("mouseout", this.onCanvasLeave);
     document.addEventListener("keydown", this.onKeyPress);
@@ -94,14 +96,13 @@ export class PenTool extends AnyTool {
   }
 
   public disable() {
-    console.log("DISABLE");
     if (this.disabled) return;
     super.disable();
     this._stored.cursor?.();
+    this._render();
     document.removeEventListener("keydown", this.onKeyPress);
     document.removeEventListener("keyup", this.onKeyPress);
     this.core.removeListener("mouseout", this.onCanvasLeave);
-    this.core.removeListener("mousemove", this.onCanvasMouseMove);
     this.core.removeListener("click", this.onCanvasClick);
     this.core.removeListener("mousedown", "points", this.onPointMouseDown);
     this.core.removeListener("mouseenter", "points", this.onPointMouseEnter);
@@ -109,8 +110,9 @@ export class PenTool extends AnyTool {
 
   public finish() {
     super.finish();
+    this.core.removeListener("mousemove", this.onCanvasMouseMove);
     this._save();
-    this._state = { modes: {}, props: this._state.props };
+    this._state = { modes: {}, props: this._state.props, reversed: false };
   }
 
   public delete(indices: number[]): boolean | void {
@@ -142,13 +144,13 @@ export class PenTool extends AnyTool {
         return;
       }
 
-      if (!this._state.feature) {
-        this.core.isolate([this.core.features.length]);
-        if (active.length && !active.map(lib.array.plain).includes(this.core.features.length))
-          this.core.state.features.set("active", [this.core.features.length]);
-
-        return this._render();
-      }
+      // if (!this._state.feature) {
+      //   this.core.isolate([this.core.features.length]);
+      //   if (active.length && !active.map(lib.array.plain).includes(this.core.features.length))
+      //     this.core.state.features.set("active", [this.core.features.length]);
+      //
+      //   return this._render();
+      // }
     }
 
     this._reset();

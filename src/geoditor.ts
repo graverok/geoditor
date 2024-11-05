@@ -94,8 +94,7 @@ export class Geoditor {
 
   set selected(next: (number | number[])[]) {
     if (lib.array.equal(next, this._selected)) return;
-    this._selected = next;
-    this._core.state.features.set("active", this._selected);
+    this._core.state.features.set("active", next);
     this._tool && this._tools[this._tool]?.refresh();
   }
 
@@ -119,31 +118,6 @@ export class Geoditor {
           return () => this._tools[key].off();
         },
       }),
-      // {
-      //   delete: (indices?: number[]) => {
-      //     const _deletion = indices || this._core.state.features.get("active");
-      //     if (!_deletion.length) return;
-      //     if (this._tool && this._tools[this._tool]?.delete(_deletion)) return;
-      //
-      //     let unselect = false;
-      //     this._core.features = this._core.features.reduce((acc, feature) => {
-      //       if (!_deletion.some((n) => lib.array.plain(n) === feature.nesting[0])) return [...acc, feature];
-      //       if (_deletion.some((n) => n === feature.nesting[0])) {
-      //         unselect = true;
-      //         return acc;
-      //       }
-      //       const _shapes = _deletion.filter((n) => lib.array.plain(n) === feature.nesting[0]) as number[][];
-      //       const mutated = (_shapes as number[][]).reduce<Feature | undefined>(
-      //         (mutating, nesting) => lib.mutateFeature(mutating, nesting),
-      //         feature,
-      //       );
-      //       if (mutated) return [...acc, mutated];
-      //       unselect = true;
-      //       return acc;
-      //     }, [] as Feature[]);
-      //
-      //     unselect && this._core.state.features.set("active", []);
-      //   },
       {} as Tools,
     );
   }
