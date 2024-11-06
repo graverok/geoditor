@@ -7,6 +7,7 @@ describe("defineModes: L+P+mL+mP", () => {
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -103,6 +104,7 @@ describe("defineModes: L+P+mL", () => {
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -190,6 +192,7 @@ describe("defineModes: L+P+mP", () => {
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -277,6 +280,7 @@ describe("defineModes: L+mP", () => {
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -364,6 +368,7 @@ describe("defineModes: L+P", () => {
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -450,6 +455,7 @@ describe("defineModes: L+mL", () => {
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -537,6 +543,7 @@ describe("defineModes: mL", () => {
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -624,6 +631,7 @@ describe("defineModes: L", () => {
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -711,6 +719,7 @@ describe("defineModes: P+mP", () => {
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -815,6 +824,7 @@ describe("defineModes: mP", () => {
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -919,6 +929,7 @@ describe("defineModes: P", () => {
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
