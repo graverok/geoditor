@@ -2,13 +2,13 @@ import * as geojson from "geojson";
 import { Controller, AnyTool, Core } from "./core";
 import { PenTool, MoveTool, HandTool, DeleteTool } from "./tools";
 import * as lib from "./lib";
-import * as config from "./config";
 
 type Tools = {
   move: (...args: Parameters<MoveTool["start"]>) => VoidFunction;
   pen: (...args: Parameters<PenTool["start"]>) => VoidFunction;
   hand: (...args: Parameters<HandTool["start"]>) => VoidFunction;
-  delete: (indices?: number[]) => VoidFunction;
+  delete: (...args: Parameters<DeleteTool["start"]>) => VoidFunction;
+  off: () => void;
 } & Record<string, (...args: Parameters<AnyTool["start"]>) => VoidFunction>;
 
 const defaultTools = {
@@ -36,7 +36,8 @@ export class Geoditor {
     select: ((selected: number[]) => void)[];
     change: ((data: geojson.Feature[]) => void)[];
     render: ((data: geojson.Feature[]) => void)[];
-  } = { load: [], select: [], change: [], render: [] };
+    tool: ((tool?: string) => void)[];
+  } = { load: [], select: [], change: [], render: [], tool: [] };
 
   constructor(config: Config) {
     this._core = new Core(config.controller, {
@@ -61,9 +62,10 @@ export class Geoditor {
 
   public on(name: "load", callback: () => void): void;
   public on(name: "select", callback: (selected: number[]) => void): void;
+  public on(name: "tool", callback: (tool?: string) => void): void;
   public on(name: "change", callback: (data: geojson.Feature[]) => void): void;
   public on(name: "render", callback: (data: geojson.Feature[]) => void): void;
-  public on(name: "load" | "select" | "change" | "render", callback: (...args: any) => void) {
+  public on(name: "load" | "select" | "change" | "render" | "tool", callback: (...args: any) => void) {
     if (this._listeners[name].find((f) => f === callback)) return;
     this._listeners[name].push(callback);
     name === "load" && this._isLoaded && callback();
@@ -71,8 +73,10 @@ export class Geoditor {
 
   public off(name: "load", callback: () => void): void;
   public off(name: "select", callback: (selected: number[]) => void): void;
+  public off(name: "tool", callback: (tool?: string) => void): void;
   public off(name: "change", callback: (data: geojson.Feature[]) => void): void;
-  public off(name: "load" | "select" | "change", callback: (...args: any) => void) {
+  public off(name: "render", callback: (data: geojson.Feature[]) => void): void;
+  public off(name: "load" | "select" | "change" | "render" | "tool", callback: (...args: any) => void) {
     this._listeners = {
       ...this._listeners,
       [name]: this._listeners[name].filter((f) => f !== callback),
@@ -110,27 +114,32 @@ export class Geoditor {
           const current = this._tool && this._tool !== key ? this._tools[this._tool] : undefined;
           const loader = () => {
             const res = this._tools[key]?.on(current, ...args);
-            if (res !== false) this._tool = key;
+            if (res !== false) {
+              this._tool = key;
+              this._listeners.tool.filter((f) => f(key));
+            }
           };
 
           if (this._isLoaded) loader();
           else this._toolLoader = loader;
-          return () => this._tools[key].off();
+          return () => {
+            this._tools[key].off();
+          };
         },
       }),
-      {} as Tools,
+      {
+        off: () => {
+          this._tool && this._tools[this._tool].off();
+          this._tool = undefined;
+          this._listeners.tool.filter((f) => f());
+          this._core.reset();
+        },
+      } as Tools,
     );
   }
 
   public icon(key: keyof typeof this.tools, stroke?: number, color?: string) {
-    switch (key) {
-      case "delete":
-        return lib.createIcon(`<g fill="none" transform="translate(-4 -4)">${config.deleteShape}</g>`, stroke, color);
-      case "hand":
-        return lib.createIcon(`<g fill="none" transform="translate(-4 -4)">${config.handShape}</g>`, stroke, color);
-      default:
-        return lib.createIcon(this._tools[key].icon, stroke, color);
-    }
+    return lib.createIcon(this._tools[key].icon, stroke, color);
   }
 
   public remove() {

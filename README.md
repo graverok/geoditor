@@ -176,7 +176,7 @@ geoditor.on("change", (data: GeoJSON.Feature[]) => {
 });
 ```
 ### .on("select") 
-Fires on selected features change. Array of selected indices is passed into listener.
+Fires on feature selection change. Array of selected indices is passed into listener.
 ```ts
 geoditor.on("select", (selected: number[]) => {
   /**
@@ -185,6 +185,17 @@ geoditor.on("select", (selected: number[]) => {
     geoditor.selected: (number | number[])[] returns selected shapes of features (if any)
    */
   console.log(selected, geoditor.selected);
+});
+```
+
+### .on("tool")
+Fires on tool switch. Current tool name is passed into listener.
+```ts
+geoditor.on("tool", (tool?: string) => {
+  /**
+    tool === geoditor.tool
+   */
+  console.log(tool, geoditor.tool);
 });
 ```
 
