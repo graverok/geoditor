@@ -34,7 +34,7 @@ export type Options = {
 };
 
 export const areaLayer = {
-  points: (width = 14) => ({
+  points: (width = 16) => ({
     type: "circle",
     paint: {
       "circle-radius": width / 2,
@@ -46,6 +46,10 @@ export const areaLayer = {
     paint: {
       "line-width": width,
       "line-opacity": 0,
+    },
+    layout: {
+      "line-cap": "round",
+      "line-join": "round",
     },
   }),
   planes: () => ({

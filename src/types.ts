@@ -39,9 +39,10 @@ export type Plane = {
 
 export type Shape = Point | Line | Plane;
 
-export interface SourceEvent<O extends MouseEvent | TouchEvent = MouseEvent> {
+export interface SourceEvent<O = MouseEvent> {
   position: Position;
   originalEvent: O;
+  preventDefault: VoidFunction;
   layer?: LayerType;
   points: Point[];
   lines: Line[];

@@ -24,8 +24,10 @@ export abstract class Controller {
   abstract setState(layer: LayerType, nesting: number[][], key: LayerState, value: boolean): void;
   abstract remove(): void;
   abstract render(type: "features" | "points", items: Feature[] | Point[]): void;
-  abstract get renderer(): any;
+  abstract get renderer(): unknown;
   abstract onInit(callback?: () => void): void;
+  protected abstract lock(): VoidFunction;
+  protected _locked: boolean = false;
 
   protected constructor(layerNames: Record<LayerType, string>) {
     this.layerNames = layerNames;

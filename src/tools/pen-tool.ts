@@ -3,11 +3,6 @@ import { GeometryType, Feature, Point, Position, SourceEvent, KeyModifier, Filte
 import * as config from "../config";
 import * as lib from "../lib";
 
-/** TODO:
- *  [ ] Refactor click events with mousedown/mouseup
- *  [×] Hide placeholder line on disabling and render it on enabling
- *  */
-
 export interface PenToolConfig {
   types: GeometryType[];
   create: boolean | "alt" | "shift" | "ctrl" | "meta";
@@ -21,6 +16,7 @@ export class PenTool extends AnyTool {
   protected _state: {
     modes: Record<string, boolean>;
     reversed: boolean;
+    dragging?: boolean;
     geometry?: Position[];
     feature?: Feature;
     event?: SourceEvent;
@@ -50,7 +46,7 @@ export class PenTool extends AnyTool {
       filter: config?.filter ?? (() => true),
     });
     this.onCanvasMouseMove = this.onCanvasMouseMove.bind(this);
-    this.onCanvasClick = this.onCanvasClick.bind(this);
+    this.onCanvasMouseDown = this.onCanvasMouseDown.bind(this);
     this.onCanvasLeave = this.onCanvasLeave.bind(this);
     this.onPointMouseEnter = this.onPointMouseEnter.bind(this);
     this.onPointMouseDown = this.onPointMouseDown.bind(this);
@@ -76,7 +72,6 @@ export class PenTool extends AnyTool {
     }
 
     super.start();
-    this.core.addListener("mousemove", this.onCanvasMouseMove);
     this._state.props = props ?? this._state.props;
     this._stored.active = this.core.state.features.get("active");
     this._isolate({});
@@ -87,32 +82,37 @@ export class PenTool extends AnyTool {
     super.enable();
     this._stored.cursor = this.core.setCursor(this.cursor("default", "crosshair"));
     this._state.event && this.onCanvasMouseMove(this._state.event);
+    this.core.addListener("mousemove", this.onCanvasMouseMove);
     this.core.addListener("mouseenter", "points", this.onPointMouseEnter);
     this.core.addListener("mousedown", "points", this.onPointMouseDown);
-    this.core.addListener("click", this.onCanvasClick);
+    this.core.addListener("mousedown", this.onCanvasMouseDown);
     this.core.addListener("mouseout", this.onCanvasLeave);
     document.addEventListener("keydown", this.onKeyPress);
     document.addEventListener("keyup", this.onKeyPress);
   }
 
   public disable() {
+    if (this._state.dragging) {
+      this.disabled = true;
+      return;
+    }
     if (this.disabled) return;
     super.disable();
     this._stored.cursor?.();
     this._render();
     document.removeEventListener("keydown", this.onKeyPress);
     document.removeEventListener("keyup", this.onKeyPress);
+    this.core.removeListener("mousemove", this.onCanvasMouseMove);
     this.core.removeListener("mouseout", this.onCanvasLeave);
-    this.core.removeListener("click", this.onCanvasClick);
+    this.core.removeListener("mousedown", this.onCanvasMouseDown);
     this.core.removeListener("mousedown", "points", this.onPointMouseDown);
     this.core.removeListener("mouseenter", "points", this.onPointMouseEnter);
   }
 
   public finish() {
-    super.finish();
-    this.core.removeListener("mousemove", this.onCanvasMouseMove);
     this._save();
     this._state = { modes: {}, props: this._state.props, reversed: false };
+    super.finish();
   }
 
   public delete(indices: number[]): boolean | void {
@@ -171,7 +171,6 @@ export class PenTool extends AnyTool {
 
   protected onCanvasMouseMove(e: SourceEvent) {
     this._state.event = e;
-    if (this.disabled) return;
 
     if (this._state.geometry) {
       const point = e.points
@@ -222,8 +221,27 @@ export class PenTool extends AnyTool {
     return this.core.setCursor(this.cursor("disabled", "not-allowed"));
   }
 
-  protected onCanvasClick(e: SourceEvent) {
-    this._state.geometry ? this._addDrawPoint(e, this._state.geometry) : this._initDraw(e);
+  protected onCanvasMouseDown(e: SourceEvent) {
+    e.preventDefault();
+    this._state.dragging = true;
+    let event = e;
+
+    const _onmousemove = (ev: SourceEvent) => {
+      event = ev;
+    };
+
+    const _onmouseup = () => {
+      e.preventDefault();
+      this._state.dragging = false;
+      this.core.removeListener("mousemove", _onmousemove);
+      this._state.geometry ? this._addDrawPoint(event, this._state.geometry) : this._initDraw(e);
+      if (this.disabled) {
+        this.disabled = false;
+        this.disable();
+      }
+    };
+    this.core.addListener("mousemove", _onmousemove);
+    document.addEventListener("mouseup", _onmouseup, { once: true });
   }
 
   protected onPointMouseEnter(e: SourceEvent) {
@@ -232,19 +250,19 @@ export class PenTool extends AnyTool {
       .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
     if (!point) return;
 
-    const _onMove = (ev: SourceEvent) => {
+    const _onmousemove = (ev: SourceEvent) => {
       if (point && lib.array.equal(ev.points[0].nesting ?? [], point.nesting)) return;
       this.core.state.points.set("hover", [ev.points[0].nesting]);
     };
 
-    const _onLeave = () => {
+    const _onmouseleave = () => {
       this.core.state.points.set("hover", []);
-      this.core.removeListener("mouseleave", "points", _onLeave);
-      this.core.removeListener("mousemove", "points", _onMove);
+      this.core.removeListener("mouseleave", "points", _onmouseleave);
+      this.core.removeListener("mousemove", "points", _onmousemove);
     };
 
-    this.core.addListener("mouseleave", "points", _onLeave);
-    this.core.addListener("mousemove", "points", _onMove);
+    this.core.addListener("mouseleave", "points", _onmouseleave);
+    this.core.addListener("mousemove", "points", _onmousemove);
     this.core.state.points.set("hover", [point.nesting]);
   }
 
@@ -253,10 +271,11 @@ export class PenTool extends AnyTool {
       .filter(this.config.filter)
       .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
     if (!point) return;
+    e.preventDefault();
+
+    const _onmouseup = () => this.core.state.points.remove("active", [point.nesting]);
     this.core.state.points.add("active", [point.nesting]);
-    document.addEventListener("mouseup", () => this.core.state.points.remove("active", [point.nesting]), {
-      once: true,
-    });
+    document.addEventListener("mouseup", _onmouseup, { once: true });
   }
 
   protected onCanvasLeave() {

@@ -13,16 +13,7 @@ import {
   SourceEventHandler,
   SourceEventOptions,
 } from "../../types";
-import {
-  addClickHandler,
-  addMouseDownHandler,
-  addMouseLeaveHandler,
-  addSource,
-  eventLayerParser,
-  eventMapParser,
-  removeSource,
-  sortPointsByDistance,
-} from "./lib";
+import { addMouseLeaveHandler, addSource, eventParser, removeSource, sortPointsByDistance } from "./lib";
 import { AddSourcePayload, areaLayer, defaultConfig, generateLayers, Options, splitLayers } from "./config";
 import type { ShapesCollection, LayerFeatureProperties, Subscription } from "./types";
 
@@ -228,6 +219,43 @@ export class MapboxController extends Controller {
     this._map = undefined;
   }
 
+  protected lock() {
+    if (this._locked) {
+      return () => void 0;
+    }
+
+    this._locked = true;
+
+    const dragPan = this._map?.dragPan.isEnabled();
+    const dragRotate = this._map?.dragRotate.isEnabled();
+    const boxZoom = this._map?.boxZoom.isEnabled();
+    const doubleClickZoom = this._map?.doubleClickZoom.isEnabled();
+
+    dragPan && this._map?.dragPan.disable();
+    dragRotate && this._map?.dragRotate.disable();
+    boxZoom && this._map?.boxZoom.disable();
+    doubleClickZoom && this._map?.doubleClickZoom.disable();
+
+    return () => {
+      dragPan && this._map?.dragPan.enable();
+      dragRotate && this._map?.dragRotate.enable();
+      boxZoom && this._map?.boxZoom.enable();
+      doubleClickZoom && this._map?.doubleClickZoom.enable();
+      this._locked = false;
+    };
+  }
+
+  private _mapHandler() {
+    return {
+      preventDefault: () => {
+        window.requestAnimationFrame(this.lock());
+      },
+      points: [...(this._hovered.points ?? [])],
+      lines: [...(this._hovered.lines ?? [])],
+      planes: [...(this._hovered.planes ?? [])],
+    };
+  }
+
   private _toFeatures(type: LayerType, items: (Line | Plane | Point)[]) {
     this._features[type] = items.map(
       (item) =>
@@ -300,7 +328,7 @@ export class MapboxController extends Controller {
 
   private _addMapListener(name: ControllerEventType, callback: SourceEventHandler, options?: SourceEventOptions) {
     const handler = (e: mapboxgl.MapMouseEvent) => {
-      callback(eventMapParser(e, this._hovered));
+      callback({ ...eventParser(e), ...this._mapHandler() });
     };
 
     if (options?.once) {
@@ -308,49 +336,23 @@ export class MapboxController extends Controller {
       return;
     }
 
-    if (name === "click") {
-      return this._addSubscription({
-        callback,
-        name,
-        off: addClickHandler(this._map, this._hovered, undefined, undefined, callback),
-      });
-    }
-
     this._map?.on(name, handler);
     this._addSubscription({ callback, name, off: () => this._map?.off(name, handler) });
   }
 
   private _addLayerListener(name: ControllerEventType, layer: LayerType, callback: SourceEventHandler) {
+    const handler = (e: mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent) => {
+      callback({ ...eventParser(e as mapboxgl.MapLayerMouseEvent), layer, ...this._mapHandler() });
+    };
+
     if (name === "mouseleave" || name === "mouseover") {
       return this._addSubscription({
         callback,
         name,
         layer,
-        off: addMouseLeaveHandler(this._map, this._hovered, layer, this.layerNames[layer], callback),
+        off: addMouseLeaveHandler(this._map, this.layerNames[layer], handler),
       });
     }
-
-    if (name === "mousedown") {
-      return this._addSubscription({
-        callback,
-        name,
-        layer,
-        off: addMouseDownHandler(this._map, this._hovered, layer, this.layerNames[layer], callback),
-      });
-    }
-
-    if (name === "click") {
-      return this._addSubscription({
-        callback,
-        name,
-        layer,
-        off: addClickHandler(this._map, this._hovered, layer, this.layerNames[layer], callback),
-      });
-    }
-
-    const handler = (e: mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent) => {
-      callback(eventLayerParser(layer)(e, this._hovered));
-    };
 
     this._map?.on(name, this.layerNames[layer], handler);
     this._addSubscription({

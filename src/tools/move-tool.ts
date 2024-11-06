@@ -60,6 +60,10 @@ export class MoveTool extends AnyTool {
   }
 
   public disable() {
+    if (this._state.dragging) {
+      this.disabled = true;
+      return;
+    }
     if (this.disabled) return;
     super.disable();
     this._stored.cursor?.();
@@ -84,12 +88,12 @@ export class MoveTool extends AnyTool {
   }
 
   public finish() {
-    super.finish();
     if (this._state.features) this.core.features = this._state.features;
     this._state = {
       dragging: false,
       modifiers: [],
     };
+    super.finish();
   }
 
   protected cursor = (key: string, fallback: string) => {
@@ -134,6 +138,7 @@ export class MoveTool extends AnyTool {
   }
 
   protected onCanvasClick(e: SourceEvent) {
+    e.preventDefault();
     const indices = [...e.points, ...e.lines, ...e.planes].map((f) => f.nesting[0]);
     if (
       typeof this.config.modify === "string" &&
@@ -163,6 +168,7 @@ export class MoveTool extends AnyTool {
     if (e.layer === "planes" && e.lines.filter(this.config.filter).length) return;
     const geometry = e[e.layer as LayerType][0];
     if (!geometry) return;
+    e.preventDefault();
 
     const current = {
       active: this.core.state.features.get("active"),
@@ -180,7 +186,7 @@ export class MoveTool extends AnyTool {
     this._renderPoints();
     this._state.dragging = true;
 
-    const _onMove = (ev: SourceEvent) => {
+    const _onmousemove = (ev: SourceEvent) => {
       if (!this._state.features) {
         if (
           Math.abs(ev.originalEvent.pageX - e.originalEvent.pageX) <= 3 &&
@@ -199,7 +205,6 @@ export class MoveTool extends AnyTool {
         );
       });
 
-      if (this.disabled) return;
       this.core.render("features", this._state.features);
       this.core.render(
         "points",
@@ -207,10 +212,9 @@ export class MoveTool extends AnyTool {
       );
     };
 
-    const _onFinish = () => {
-      this.core.removeListener("mousemove", _onMove);
+    const _onmouseup = () => {
+      this.core.removeListener("mousemove", _onmousemove);
       this._state.dragging = false;
-      if (this.disabled) return;
 
       if (this._state.features) {
         if (current.active.map(array.plain).includes(geometry.nesting[0]))
@@ -227,13 +231,18 @@ export class MoveTool extends AnyTool {
         this.refresh();
       }
       this.onFeatureHover(e);
+      if (this.disabled) {
+        this.disabled = false;
+        this.disable();
+      }
     };
 
-    this.core.addListener("mousemove", _onMove);
-    document.addEventListener("mouseup", _onFinish, { once: true });
+    this.core.addListener("mousemove", _onmousemove);
+    document.addEventListener("mouseup", _onmouseup, { once: true });
   }
 
   protected onGeometryDblClick(e: SourceEvent) {
+    e.preventDefault();
     if (this.config.modify !== "dblclick") return;
 
     if (
@@ -258,10 +267,7 @@ export class MoveTool extends AnyTool {
         this.core.state.points.set("hover", []);
         this.refresh();
         this._event && this.onFeatureHover(this._event);
-
-        return;
       }
-
       return;
     }
 
@@ -276,21 +282,21 @@ export class MoveTool extends AnyTool {
     if (!point) return;
     !this._state.dragging && this.core.state.points.set("hover", [point.nesting]);
 
-    const _onMove = (ev: SourceEvent) => {
+    const _onmousemove = (ev: SourceEvent) => {
       if (this._state.dragging) return;
       if (lib.array.equal(ev.points[0].nesting ?? [], point.nesting)) return;
       point = ev.points.filter(this.config.filter)[0];
       this.core.state.points.set("hover", [point.nesting]);
     };
 
-    const _onLeave = () => {
+    const _onmouseleave = () => {
       !this._state.dragging && this.core.state.points.set("hover", []);
-      this.core.removeListener("mouseleave", "points", _onLeave);
-      this.core.removeListener("mousemove", "points", _onMove);
+      this.core.removeListener("mouseleave", "points", _onmouseleave);
+      this.core.removeListener("mousemove", "points", _onmousemove);
     };
 
-    this.core.addListener("mouseleave", "points", _onLeave);
-    this.core.addListener("mousemove", "points", _onMove);
+    this.core.addListener("mouseleave", "points", _onmouseleave);
+    this.core.addListener("mousemove", "points", _onmousemove);
   }
 
   protected onPointDrag(e: SourceEvent) {
@@ -298,6 +304,7 @@ export class MoveTool extends AnyTool {
     const point = e.points.filter(this.config.filter)[0];
     let feature = this.core.getFeatures([point?.nesting[0]])[0];
     if (!point || !feature) return;
+    e.preventDefault();
 
     let sibling: Point | undefined;
     this._state.dragging = true;
@@ -341,18 +348,18 @@ export class MoveTool extends AnyTool {
       ];
     }
 
-    const _onPointMove = (ev: SourceEvent) => {
+    const _onpointhover = (ev: SourceEvent) => {
       sibling = ev.points.find(
         (n) =>
           !this.core.state.points.get(n.nesting).includes("disabled") && !lib.array.equal(n.nesting, point.nesting),
       );
     };
 
-    const _onPointLeave = () => {
+    const _onpointleave = () => {
       sibling = undefined;
     };
 
-    const _onMove = (ev: SourceEvent) => {
+    const _onmousemove = (ev: SourceEvent) => {
       feature = _updater(
         feature,
         lib.point.normalize(sibling?.coordinates || lib.point.move(point.coordinates, e.position, ev.position)),
@@ -362,17 +369,15 @@ export class MoveTool extends AnyTool {
         feature,
         ...this.core.features.slice(point.nesting[0] + 1),
       ];
-      if (this.disabled) return;
       this.core.render("features", this._state.features);
       this.core.render("points", lib.createPoints([feature], this.core.state.features.get("active")));
     };
 
-    const _onFinish = (ev: MouseEvent) => {
-      this.core.removeListener("mousemove", _onMove);
-      this.core.removeListener("mousemove", "points", _onPointMove);
-      this.core.removeListener("mouseleave", "points", _onPointLeave);
+    const _onmouseup = (ev: MouseEvent) => {
+      this.core.removeListener("mousemove", _onmousemove);
+      this.core.removeListener("mousemove", "points", _onpointhover);
+      this.core.removeListener("mouseleave", "points", _onpointleave);
       this._state.dragging = false;
-      if (this.disabled) return;
       this.core.state.points.set("active", []);
 
       if (this._state.features) {
@@ -392,6 +397,10 @@ export class MoveTool extends AnyTool {
       this._renderPoints();
       this.onKeyPress(ev);
       this.onFeatureHover(e);
+      if (this.disabled) {
+        this.disabled = false;
+        this.disable();
+      }
     };
 
     const isReducible = positions.length > 2 + Number(lib.isPolygonLike(feature));
@@ -430,11 +439,10 @@ export class MoveTool extends AnyTool {
       this.core.state.points.set("active", [point.nesting]);
     });
 
-    this.core.addListener("mousemove", _onMove);
-    document.addEventListener("mouseup", _onFinish, { once: true });
-
-    this.core.addListener("mousemove", "points", _onPointMove);
-    this.core.addListener("mouseleave", "points", _onPointLeave);
+    this.core.addListener("mousemove", _onmousemove);
+    document.addEventListener("mouseup", _onmouseup, { once: true });
+    this.core.addListener("mousemove", "points", _onpointhover);
+    this.core.addListener("mouseleave", "points", _onpointleave);
   }
 
   private _renderPoints() {

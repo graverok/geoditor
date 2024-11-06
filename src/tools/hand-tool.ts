@@ -1,9 +1,5 @@
 import { AnyTool } from "../core";
 
-/** TODO:
- * [ ] Add unlocking renderer move
- */
-
 export class HandTool extends AnyTool {
   private _current?: AnyTool;
 
@@ -27,7 +23,6 @@ export class HandTool extends AnyTool {
   }
 
   public start(args?: { preserve: boolean }): void {
-    console.log(args, this._current);
     if (args?.preserve) {
       this._current?.disable();
     } else {
