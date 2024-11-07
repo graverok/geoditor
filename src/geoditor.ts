@@ -40,7 +40,7 @@ export class Geoditor<T extends Record<string, AnyTool>, C extends Controller = 
       },
       change: () => {
         this._listeners.change.forEach((f) => f(this.data));
-        this._tool && this._tools[this._tool]?.refresh();
+        this._tool && this._tools[this._tool]?.refresh?.();
       },
       render: (data: geojson.Feature[]) => {
         this._listeners.render.forEach((f) => f(data));
@@ -77,7 +77,7 @@ export class Geoditor<T extends Record<string, AnyTool>, C extends Controller = 
 
   set data(data) {
     this._core.data = data;
-    this._tool && this._tools[this._tool]?.refresh();
+    this._tool && this._tools[this._tool]?.refresh?.();
   }
 
   get data() {
@@ -91,7 +91,7 @@ export class Geoditor<T extends Record<string, AnyTool>, C extends Controller = 
   set selected(next: (number | number[])[]) {
     if (lib.array.equal(next, this._selected)) return;
     this._core.state.features.set("active", next);
-    this._tool && this._tools[this._tool]?.refresh();
+    this._tool && this._tools[this._tool]?.refresh?.();
   }
 
   get tool() {

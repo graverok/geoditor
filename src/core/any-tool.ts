@@ -29,14 +29,11 @@ export class AnyTool {
   public start(): void {
     this.enable();
   }
-  public delete(indices?: (number | number[])[]): boolean | void;
-  public delete(): boolean | void {
-    return;
-  }
+  public delete?(indices?: (number | number[])[]): boolean | void;
   public finish(): void {
     this.disable();
   }
-  public refresh(): void {}
+  public refresh?(): void;
 
   public get icon(): string {
     return "";

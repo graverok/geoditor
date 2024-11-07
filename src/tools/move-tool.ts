@@ -434,6 +434,7 @@ export class MoveTool extends AnyTool {
     this.core.state.points.add("disabled", disabled);
     this.core.state.points.remove("disabled", enabled);
     this.core.render("points", points);
+
     window.requestAnimationFrame(() => {
       this.core.state.points.set("hover", [point.nesting]);
       this.core.state.points.set("active", [point.nesting]);
@@ -447,27 +448,29 @@ export class MoveTool extends AnyTool {
 
   private _render() {
     const points = lib.createPoints(this._state.features ?? this.core.features, this.core.state.features.get("active"));
+
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) {
       this.core.state.points.add(
         "disabled",
         points.map((p) => p.nesting),
       );
-      this.core.render("points", points);
-    } else {
-      const middlePoints = createMiddlePoints(
-        this._state.features ?? this.core.features,
-        this.core.state.features.get("active"),
-      ).filter(this.config.filter);
-      this.core.state.points.add(
-        "disabled",
-        [...middlePoints, ...points].map((p) => p.nesting),
-      );
-      this.core.state.points.remove(
-        "disabled",
-        points.filter(this.config.filter).map((p) => p.nesting),
-      );
-      this.core.render("points", [...points, ...middlePoints]);
+      return this.core.render("points", points);
     }
+
+    const midpoints = createMiddlePoints(
+      this._state.features ?? this.core.features,
+      this.core.state.features.get("active"),
+    ).filter(this.config.filter);
+
+    this.core.state.points.add(
+      "disabled",
+      [...midpoints, ...points].map((p) => p.nesting),
+    );
+    this.core.state.points.remove(
+      "disabled",
+      points.filter(this.config.filter).map((p) => p.nesting),
+    );
+    this.core.render("points", [...points, ...midpoints]);
   }
 }
 

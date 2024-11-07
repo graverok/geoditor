@@ -10,7 +10,7 @@ export class DeleteTool extends AnyTool {
   public on(current: AnyTool | undefined, indices?: number[]): boolean {
     const _deletion = indices || this.core.state.features.get("active");
     if (!_deletion.length) return false;
-    if (current?.delete(_deletion)) return false;
+    if (current?.delete?.(_deletion)) return false;
 
     let unselect = false;
     this.core.features = this.core.features.reduce((acc, feature) => {
