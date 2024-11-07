@@ -34,26 +34,33 @@ export type Options = {
 };
 
 export const areaLayer = {
-  points: (width = 14) => ({
-    type: "circle",
-    paint: {
-      "circle-radius": width / 2,
-      "circle-opacity": 0,
-    },
-  }),
-  lines: (width = 10) => ({
-    type: "line",
-    paint: {
-      "line-width": width,
-      "line-opacity": 0,
-    },
-  }),
-  planes: () => ({
-    type: "fill",
-    paint: {
-      "fill-opacity": 0,
-    },
-  }),
+  points: (width = 16) =>
+    ({
+      type: "circle",
+      paint: {
+        "circle-radius": width / 2,
+        "circle-opacity": 0,
+      },
+    }) as Omit<mapboxgl.CircleLayer, "id">,
+  lines: (width = 10) =>
+    ({
+      type: "line",
+      paint: {
+        "line-width": width,
+        "line-opacity": 0,
+      },
+      layout: {
+        "line-cap": "round",
+        "line-join": "round",
+      },
+    }) as Omit<mapboxgl.LineLayer, "id">,
+  planes: () =>
+    ({
+      type: "fill",
+      paint: {
+        "fill-opacity": 0,
+      },
+    }) as Omit<mapboxgl.FillLayer, "id">,
 };
 
 export const defaultConfig: LayerConfig = {

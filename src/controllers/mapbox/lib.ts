@@ -1,9 +1,9 @@
 import * as mapboxgl from "mapbox-gl";
 import * as geojson from "geojson";
-import { LayerType, Position, SourceEvent, SourceEventHandler } from "../../types";
+import { Position, SourceEvent } from "../../types";
 import * as lib from "../../lib";
 import { AddSourcePayload } from "./config";
-import { LayerFeatureProperties, ShapesCollection } from "./types";
+import { LayerFeatureProperties } from "./types";
 
 export const sortPointsByDistance = (
   points: geojson.Feature<geojson.Point, LayerFeatureProperties>[],
@@ -14,41 +14,27 @@ export const sortPointsByDistance = (
   );
 };
 
-export const eventMapParser = (e: mapboxgl.MapMouseEvent, collection: ShapesCollection): SourceEvent => ({
+export const eventParser = (
+  e: mapboxgl.MapMouseEvent | mapboxgl.MapLayerMouseEvent,
+): Pick<SourceEvent, "position" | "originalEvent"> => ({
   position: e.lngLat.toArray(),
   originalEvent: e.originalEvent,
-  points: [...(collection.points ?? [])],
-  lines: [...(collection.lines ?? [])],
-  planes: [...(collection.planes ?? [])],
 });
-
-export const eventLayerParser =
-  (layer: LayerType) => (e: mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent, collection: ShapesCollection) =>
-    ({
-      position: e.lngLat.toArray(),
-      originalEvent: e.originalEvent,
-      layer,
-      points: [...(collection.points ?? [])],
-      lines: [...(collection.lines ?? [])],
-      planes: [...(collection.planes ?? [])],
-    }) as SourceEvent;
 
 export function addMouseLeaveHandler(
   map: mapboxgl.Map | undefined,
-  collection: ShapesCollection,
-  layer: LayerType,
   mapLayer: string,
-  callback: SourceEventHandler,
+  callback: (e: mapboxgl.MapMouseEvent) => void,
 ) {
   let featurePoint: mapboxgl.Point | undefined;
 
-  const handleMove = (ev: mapboxgl.MapLayerTouchEvent | mapboxgl.MapMouseEvent) => {
+  const handleMove = (ev: mapboxgl.MapMouseEvent) => {
     featurePoint = ev.point;
   };
 
   const handleMapMove = (ev: mapboxgl.MapMouseEvent) => {
     if (ev.point.x !== featurePoint?.x || ev.point.y !== featurePoint.y) {
-      callback(eventLayerParser(layer)(ev, collection));
+      callback(ev);
     }
   };
 
@@ -58,117 +44,6 @@ export function addMouseLeaveHandler(
   return () => {
     map?.off("mousemove", handleMapMove);
     map?.off("mousemove", mapLayer, handleMove);
-  };
-}
-
-export function addMouseDownHandler(
-  map: mapboxgl.Map | undefined,
-  collection: ShapesCollection,
-  layer: LayerType,
-  mapLayer: string,
-  callback: SourceEventHandler,
-) {
-  let hasDragPan: boolean;
-  let hasBoxZoom: boolean;
-
-  const handler = (e: mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent) => {
-    hasDragPan = Boolean(map?.dragPan.isEnabled());
-    hasDragPan && map?.dragPan.disable();
-    hasBoxZoom = Boolean(map?.boxZoom.isEnabled());
-    hasBoxZoom && map?.boxZoom.disable();
-    callback(eventLayerParser(layer)(e, collection));
-    document.addEventListener(
-      "mouseup",
-      () => {
-        hasDragPan && map?.dragPan.enable();
-        hasBoxZoom && map?.boxZoom.enable();
-      },
-      { once: true },
-    );
-  };
-
-  map?.on("mousedown", mapLayer, handler);
-
-  return () => {
-    map?.off("mousedown", mapLayer, handler);
-  };
-}
-
-export function addClickHandler(
-  map: mapboxgl.Map | undefined,
-  collection: ShapesCollection,
-  layer: LayerType | undefined,
-  mapLayer: string | undefined,
-  callback: SourceEventHandler,
-) {
-  let isDblClickEnabled: boolean | undefined;
-  let point: { x: number; y: number } | undefined;
-  const handleDown = (e: mapboxgl.MapMouseEvent | mapboxgl.MapLayerMouseEvent) => {
-    point = {
-      x: e.originalEvent.pageX,
-      y: e.originalEvent.pageY,
-    };
-    isDblClickEnabled = map?.doubleClickZoom.isEnabled();
-    isDblClickEnabled && map?.doubleClickZoom.disable();
-    document.addEventListener("mousemove", handleMove);
-    if (mapLayer) {
-      map?.on("mouseup", mapLayer, handleUp);
-    } else {
-      map?.on("mouseup", handleUp);
-    }
-  };
-
-  const handleMove = (ev: MouseEvent) => {
-    if (!point) return;
-    if (Math.abs(ev.pageX - point.x) <= 3 && Math.abs(ev.pageY - point.y) <= 3) return;
-    isDblClickEnabled && map?.doubleClickZoom.enable();
-    isDblClickEnabled = false;
-    document.removeEventListener("mousemove", handleMove);
-    if (mapLayer) {
-      map?.off("mouseup", mapLayer, handleUp);
-    } else {
-      map?.off("mouseup", handleUp);
-    }
-  };
-
-  const handleUp = (e: mapboxgl.MapMouseEvent | mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent) => {
-    document.removeEventListener("mousemove", handleMove);
-    if (mapLayer) {
-      map?.off("mouseup", mapLayer, handleUp);
-    } else {
-      map?.off("mouseup", handleUp);
-    }
-    setTimeout(() => {
-      isDblClickEnabled && map?.doubleClickZoom.enable();
-      isDblClickEnabled = false;
-    });
-
-    if (layer) {
-      callback(eventLayerParser(layer)(e as mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent, collection));
-    } else {
-      callback(eventMapParser(e as mapboxgl.MapMouseEvent, collection));
-    }
-  };
-
-  if (mapLayer) {
-    map?.on("mousedown", mapLayer, handleDown);
-  } else {
-    map?.on("mousedown", handleDown);
-  }
-
-  return () => {
-    document.removeEventListener("mousemove", handleMove);
-    if (mapLayer) {
-      map?.off("mouseup", mapLayer, handleUp);
-      map?.off("mousedown", mapLayer, handleDown);
-    } else {
-      map?.off("mouseup", handleUp);
-      map?.off("mousedown", handleDown);
-    }
-    setTimeout(() => {
-      isDblClickEnabled && map?.doubleClickZoom.enable();
-      isDblClickEnabled = false;
-    });
   };
 }
 

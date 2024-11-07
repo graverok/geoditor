@@ -37,7 +37,7 @@ export class Core {
           this._controller.setState("lines", add, key, true);
           this._controller.setState("planes", add, key, true);
         }
-        key === "active" && this._emitters.select?.(this.state.features.get("active"));
+        if (key === "active") this._emitters.select?.(this.state.features.get("active"));
       }),
       points: new StateManager((key, add, remove) => {
         remove.length && this._controller.setState("points", remove, key, false);
@@ -93,8 +93,8 @@ export class Core {
 
   set features(features: Feature[]) {
     const next = updateSelected(features, this.state.features.get("active"));
-    this.state.features.set("active", []);
-    this.state.features.set("disabled", []);
+    // this.state.features.set("active", []);
+    // this.state.features.set("disabled", []);
     this._data = this.mapper(features);
     this.render("features", this.features);
     this.state.features.set("active", next);
@@ -139,6 +139,7 @@ export class Core {
               type: item.type,
               coordinates: item.coordinates,
             },
+            properties: item.props,
           } as geojson.Feature)
         : ({
             type: "Feature",

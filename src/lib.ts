@@ -338,6 +338,8 @@ export const createCursor = (shape: string, shadow: string, key: string, color =
 };
 
 export const createIcon = (content: string, strokeWidth = 1, color?: string) => {
+  if (!content) return null;
+
   const svg = makeSvg(`<g stroke-width="${strokeWidth}">${content}</g>`, 24, color);
   return {
     toHTML: () => svg,

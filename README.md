@@ -16,14 +16,6 @@ npm install geoditor
 yarn add geoditor
 ```
 
-### Table of Content:
-- [Initialising](##Initialising)
-- [Using with MapBox](##Using with MapBox)
-- [Getters and Setters](##Getters and Setters)
-- [Events](##Events)
-- [Tool Subscribers](## Tool Subscribers)
-- [Tools](##Tools)
-
 ## Initialising
 Geoditor is initialising with 2 types of modules.
 1. __Controller__ _(required)_ to render features onto map. Provides API between Geoditor core and map implementation. Currently only [MapBox](#using-with-mapbox) is supported. 
@@ -36,7 +28,9 @@ const geoditor = new Geoditor({
   controller: {...}, 
   tools: {
     pen: new PenTool(),
-    move: new MoveTool(),
+    move: new MoveTool(), 
+    hand: new HandTool(),
+    delete: new DeleteTool(),
   }
 });
 ```
@@ -182,7 +176,7 @@ geoditor.on("change", (data: GeoJSON.Feature[]) => {
 });
 ```
 ### .on("select") 
-Fires on selected features change. Array of selected indices is passed into listener.
+Fires on feature selection change. Array of selected indices is passed into listener.
 ```ts
 geoditor.on("select", (selected: number[]) => {
   /**
@@ -191,6 +185,17 @@ geoditor.on("select", (selected: number[]) => {
     geoditor.selected: (number | number[])[] returns selected shapes of features (if any)
    */
   console.log(selected, geoditor.selected);
+});
+```
+
+### .on("tool")
+Fires on tool switch. Current tool name is passed into listener.
+```ts
+geoditor.on("tool", (tool?: string) => {
+  /**
+    tool === geoditor.tool
+   */
+  console.log(tool, geoditor.tool);
 });
 ```
 
@@ -209,45 +214,19 @@ geoditor.on("render", (data: GeoJSON.Feature[]) => {
 });
 ```
 
-## Tool Subscribers
-### .filter() `Beta`
-Allows to filter shapes before interaction.
-
-```ts
-type Shape = (
-  { type: geojson.Point; coordinates: Position } |
-  { type: geojson.LineString; coordinates: Position[] } |
-  { type: geojson.Polygon; coordinates: Position[][] }
-) & (
-  { nesting: number[], props: mapboxgl.Feature["props"] }
-)  
-
-/** EXAMPLE:
- * Ignores all events on first point of LineString features.
- **/
-geoditor.tools.move().filter((shape: Shape): boolean | void => {
-  if (
-    shape.type === "Point" && 
-    geoditor.data[shape.nesting[0]].geometry.type === "LineString" && 
-    shape.nesting[shape.nesting.length - 1] === 0
-  ) 
-    return false;
-})
-```
-
-## Tools
+## Tools Initialisation
 ### Pen Tool
+**Draws geometry.** Different tools can be initialised with PenTool using different options:
 
-Different tools can be initialised with PenTool using different options:
+|   Property   | Description                                                                                      | Type                                                                                                                                                                                                                                                                                                                                                      | Default                                                        |
+|:------------:|:-------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------|
+|  __types__   | Types of created features                                                                        | `LineString` \| `Polygon` \| `MultiLineString` \| `MultiPolygon` \| `Array<"LineString" \| "Polygon" \| "MultiLineString" \| "MultiPolygon">`                                                                                                                                                                                                             | `["LineString", "Polygon", "MultiLineString", "MultiPolygon"]` |
+|  __append__  | Extends line geometry and converts single geometry to multi if corresponding types are provided. | `boolean` \| `shift` \| `alt` \| `ctrl` \| `meta`                                                                                                                                                                                                                                                                                                         | `true`                                                         | 
+| __subtract__ | Subtract shapes from polygonal features.                                                         | `boolean` \| `shift` \| `alt` \| `ctrl` \| `meta`                                                                                                                                                                                                                                                                                                         | `true`                                                         | 
+|  __create__  | Add new features.                                                                                | `boolean` \| `shift` \| `alt` \| `ctrl` \| `meta`                                                                                                                                                                                                                                                                                                         | `true`                                                         |
+|  __filter__  | Filter predicate to exclude specific geometries from interaction and render                      | <details><summary>`(shape: Shape) => boolean`</summary><pre>type Shape = (<br/>  { type: "Point"; coordinates: number[] } \|<br/>  { type: "LineString"; coordinates: number[][] } \|<br/>  { type: "Polygon"; coordinates: number[][][] }<br/>) & (<br/>  { nesting: number[], props: mapboxgl.Feature["props"] }<br/>)</pre></details> | `() => true` |
 
-|   Property   | Description                                                                                          | Type                                                                                                                                          | Default                                                        |
-|:------------:|:-----------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------|
-|  __types__   | Types of created features                                                                            | `LineString` \| `Polygon` \| `MultiLineString` \| `MultiPolygon` \| `Array<"LineString" \| "Polygon" \| "MultiLineString" \| "MultiPolygon">` | `["LineString", "Polygon", "MultiLineString", "MultiPolygon"]` |
-|  __append__  | Extends line geometry and converts single geometry to multi if corresponding types are provided.     | `boolean` \| `shift` \| `alt` \| `ctrl` \| `meta`                                                                                          | `true` | 
-| __subtract__ | Subtract shapes from polygonal features.                                                             | `boolean` \| `shift` \| `alt` \| `ctrl` \| `meta`                                                                                          | `true` | 
-|  __create__  | Add new features.                                                                                    | `boolean` \| `shift` \| `alt` \| `ctrl` \| `meta`                                                                                             | `true` | 
-
-#### Examples
+#### Example
 ```ts
 const PolygonTool = new PenTool({
   types: ["Polygon", "MultiPolygon"],
@@ -263,8 +242,20 @@ const AppendTool = new PenTool({
 
 ### Move Tool
 
-You can provide key modifier to enable editing point mode. If no modifier is provided this mode enables by double click.
+**Moves and modifies geometry**. You can provide key modifier to enable editing point mode. If no modifier is provided this mode enables by double click.
 
-|  Property  | Description                                                                                | Type                                                 | Default |
-|:----------:|:-------------------------------------------------------------------------------------------|:-----------------------------------------------------|:--------|
-| __modify__ | Sets modifier key to activate point editing mode. If `true` second click enables this mode | `boolean` \| `dblclick` \| `alt` \| `ctrl` \| `meta` | `true`  | 
+|  Property  | Description                                                                                | Type                                                                                                                                                                                                                                                                                                                                     | Default      |
+|:----------:|:-------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------|
+| __modify__ | Sets modifier key to activate point editing mode. If `true` second click enables this mode | `boolean` \| `dblclick` \| `alt` \| `ctrl` \| `meta`                                                                                                                                                                                                                                                                                     | `true`       | 
+|  __filter__  | Filter predicate to exclude specific geometries from interaction and render                      | <details><summary>`(shape: Shape) => boolean`</summary><pre>type Shape = (<br/>  { type: "Point"; coordinates: number[] } \|<br/>  { type: "LineString"; coordinates: number[][] } \|<br/>  { type: "Polygon"; coordinates: number[][][] }<br/>) & (<br/>  { nesting: number[], props: mapboxgl.Feature["props"] }<br/>)</pre></details> | `() => true` |
+
+#### Example
+```ts
+const ModifyTool = new MoveTool({
+  modify: "dblclick",
+});
+
+const MoveOnlyTool = new MoveTool({
+  modify: false,
+});
+```
