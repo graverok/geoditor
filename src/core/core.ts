@@ -13,24 +13,19 @@ export class Core {
     features: StateManager;
     points: StateManager;
   };
-  public render: (type: "features" | "points", items: Feature[] | Point[]) => void;
   private _data: geojson.Feature[] = [];
-  private readonly _onSelect!: ((next: (number | number[])[]) => void) | undefined;
-  private readonly _onChange!: (() => void) | undefined;
-  private readonly _controller: Controller;
 
-  constructor(props: {
-    controller: Controller;
-    onSelect?: (next: (number | number[])[]) => void;
-    onChange?: () => void;
-  }) {
-    this._controller = props.controller;
-    this._onSelect = props.onSelect;
-    this._onChange = props.onChange;
+  constructor(
+    private readonly _controller: Controller,
+    private readonly _emitters: {
+      select?: (next: (number | number[])[]) => void;
+      change?: () => void;
+      render?: (data: geojson.Feature[]) => void;
+    },
+  ) {
     this.addListener = this._controller.addListener;
     this.removeListener = this._controller.removeListener;
     this.setCursor = this._controller.setCursor;
-    this.render = this._controller.render;
 
     this.state = {
       features: new StateManager((key, add, remove) => {
@@ -42,7 +37,7 @@ export class Core {
           this._controller.setState("lines", add, key, true);
           this._controller.setState("planes", add, key, true);
         }
-        key === "active" && this._onSelect?.(this.state.features.get("active"));
+        if (key === "active") this._emitters.select?.(this.state.features.get("active"));
       }),
       points: new StateManager((key, add, remove) => {
         remove.length && this._controller.setState("points", remove, key, false);
@@ -67,7 +62,7 @@ export class Core {
     this.render("points", []);
   }
 
-  public isolateFeatures(active?: (number | number[])[]) {
+  public isolate(active?: (number | number[])[]) {
     const disabled =
       (active && !active.some((n) => typeof n === "number")) ||
       (this.state.features.get("active").length &&
@@ -98,29 +93,12 @@ export class Core {
 
   set features(features: Feature[]) {
     const next = updateSelected(features, this.state.features.get("active"));
-    this.state.features.set("active", []);
-    this.state.features.set("disabled", []);
-    this._data = features.map((item) =>
-      this._data[item.nesting[0]]
-        ? ({
-            ...this.data[item.nesting[0]],
-            geometry: {
-              type: item.type,
-              coordinates: item.coordinates,
-            },
-          } as geojson.Feature)
-        : ({
-            type: "Feature",
-            geometry: {
-              type: item.type,
-              coordinates: item.coordinates,
-            },
-            properties: item.props,
-          } as geojson.Feature),
-    );
+    // this.state.features.set("active", []);
+    // this.state.features.set("disabled", []);
+    this._data = this.mapper(features);
     this.render("features", this.features);
     this.state.features.set("active", next);
-    this._onChange?.();
+    this._emitters.change?.();
   }
 
   get data() {
@@ -143,8 +121,35 @@ export class Core {
     return this._controller.renderer;
   }
 
+  public render(type: "features" | "points", items: Feature[] | Point[]) {
+    if (type === "features") this._emitters.render?.(this.mapper(items as Feature[]));
+    this._controller.render(type, items);
+  }
+
   public remove() {
     this._controller.remove();
+  }
+
+  private mapper(features: Feature[]) {
+    return features.map((item) =>
+      this._data[item.nesting[0]]
+        ? ({
+            ...this.data[item.nesting[0]],
+            geometry: {
+              type: item.type,
+              coordinates: item.coordinates,
+            },
+            properties: item.props,
+          } as geojson.Feature)
+        : ({
+            type: "Feature",
+            geometry: {
+              type: item.type,
+              coordinates: item.coordinates,
+            },
+            properties: item.props,
+          } as geojson.Feature),
+    );
   }
 }
 

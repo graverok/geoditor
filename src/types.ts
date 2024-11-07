@@ -1,7 +1,7 @@
 import * as geojson from "geojson";
 
 export type Position = number[];
-export type DrawType = "LineString" | "Polygon" | "MultiLineString" | "MultiPolygon";
+export type GeometryType = "LineString" | "Polygon" | "MultiLineString" | "MultiPolygon";
 export type LayerType = "points" | "lines" | "planes";
 export type LayerState = "disabled" | "hover" | "active";
 export type FeatureProps = {
@@ -39,9 +39,10 @@ export type Plane = {
 
 export type Shape = Point | Line | Plane;
 
-export interface SourceEvent<O extends MouseEvent | TouchEvent = MouseEvent> {
+export interface SourceEvent<O = MouseEvent> {
   position: Position;
   originalEvent: O;
+  preventDefault: VoidFunction;
   layer?: LayerType;
   points: Point[];
   lines: Line[];
@@ -51,7 +52,6 @@ export interface SourceEvent<O extends MouseEvent | TouchEvent = MouseEvent> {
 export type SourceEventHandler = (e: SourceEvent) => void;
 export type SourceEventOptions = { once?: boolean };
 export type FilterHandler = (shape: Shape) => boolean | void;
-export type SubscribeType = "filter";
 export type ControllerEventType =
   | "click"
   | "dblclick"
@@ -66,3 +66,5 @@ export type ControllerEventType =
   | "touchstart"
   | "touchend"
   | "touchcancel";
+
+export type KeyModifier = "alt" | "shift" | "ctrl" | "meta";

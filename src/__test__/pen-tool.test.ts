@@ -3,10 +3,11 @@ import { PenToolConfig } from "../tools";
 
 describe("defineModes: L+P+mL+mP", () => {
   const config: PenToolConfig = {
-    drawTypes: ["Polygon", "LineString", "MultiLineString", "MultiPolygon"],
+    types: ["Polygon", "LineString", "MultiLineString", "MultiPolygon"],
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -99,10 +100,11 @@ describe("defineModes: L+P+mL+mP", () => {
 });
 describe("defineModes: L+P+mL", () => {
   const config: PenToolConfig = {
-    drawTypes: ["Polygon", "LineString", "MultiLineString"],
+    types: ["Polygon", "LineString", "MultiLineString"],
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -186,10 +188,11 @@ describe("defineModes: L+P+mL", () => {
 });
 describe("defineModes: L+P+mP", () => {
   const config: PenToolConfig = {
-    drawTypes: ["Polygon", "LineString", "MultiPolygon"],
+    types: ["Polygon", "LineString", "MultiPolygon"],
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -273,10 +276,11 @@ describe("defineModes: L+P+mP", () => {
 });
 describe("defineModes: L+mP", () => {
   const config: PenToolConfig = {
-    drawTypes: ["LineString", "MultiPolygon"],
+    types: ["LineString", "MultiPolygon"],
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -360,10 +364,11 @@ describe("defineModes: L+mP", () => {
 });
 describe("defineModes: L+P", () => {
   const config: PenToolConfig = {
-    drawTypes: ["Polygon", "LineString"],
+    types: ["Polygon", "LineString"],
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -446,10 +451,11 @@ describe("defineModes: L+P", () => {
 });
 describe("defineModes: L+mL", () => {
   const config: PenToolConfig = {
-    drawTypes: ["LineString", "MultiLineString"],
+    types: ["LineString", "MultiLineString"],
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -533,10 +539,11 @@ describe("defineModes: L+mL", () => {
 });
 describe("defineModes: mL", () => {
   const config: PenToolConfig = {
-    drawTypes: ["MultiLineString"],
+    types: ["MultiLineString"],
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -620,10 +627,11 @@ describe("defineModes: mL", () => {
 });
 describe("defineModes: L", () => {
   const config: PenToolConfig = {
-    drawTypes: ["LineString"],
+    types: ["LineString"],
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -707,10 +715,11 @@ describe("defineModes: L", () => {
 
 describe("defineModes: P+mP", () => {
   const config: PenToolConfig = {
-    drawTypes: ["Polygon", "MultiPolygon"],
+    types: ["Polygon", "MultiPolygon"],
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -811,10 +820,11 @@ describe("defineModes: P+mP", () => {
 });
 describe("defineModes: mP", () => {
   const config: PenToolConfig = {
-    drawTypes: ["MultiPolygon"],
+    types: ["MultiPolygon"],
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {
@@ -915,10 +925,11 @@ describe("defineModes: mP", () => {
 });
 describe("defineModes: P", () => {
   const config: PenToolConfig = {
-    drawTypes: ["Polygon"],
+    types: ["Polygon"],
     create: true,
     append: true,
     subtract: true,
+    filter: () => true,
   };
 
   test("all", () => {

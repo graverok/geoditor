@@ -1,54 +1,387 @@
 import { AnyTool } from "../core";
+import { GeometryType, Feature, Point, Position, SourceEvent, KeyModifier, FilterHandler } from "../types";
+import * as config from "../config";
 import * as lib from "../lib";
-import { DrawType, Feature, Point, Position, SourceEvent } from "../types";
 
 export interface PenToolConfig {
-  drawTypes: DrawType[];
-  create: boolean | "altKey" | "shiftKey" | "ctrlKey" | "metaKey";
-  subtract: boolean | "altKey" | "shiftKey" | "ctrlKey" | "metaKey";
-  append: boolean | "altKey" | "shiftKey" | "ctrlKey" | "metaKey";
+  types: GeometryType[];
+  create: boolean | "alt" | "shift" | "ctrl" | "meta";
+  subtract: boolean | "alt" | "shift" | "ctrl" | "meta";
+  append: boolean | "alt" | "shift" | "ctrl" | "meta";
+  filter: FilterHandler;
 }
 
 export class PenTool extends AnyTool {
   declare config: PenToolConfig;
-  private _state: {
+  protected _state: {
     modes: Record<string, boolean>;
+    reversed: boolean;
+    dragging?: boolean;
     geometry?: Position[];
     feature?: Feature;
-    reversed?: boolean;
     event?: SourceEvent;
     props?: Record<string, unknown>;
     nesting?: number[];
   } = {
     modes: {},
+    reversed: false,
   };
-  private _stored: {
+  protected _stored: {
     cursor?: () => void;
     active: (number | number[])[];
   } = {
     active: [],
   };
 
-  constructor(config?: Partial<Omit<PenToolConfig, "drawTypes"> & { drawTypes: DrawType | DrawType[] }>) {
+  constructor(config?: Partial<Omit<PenToolConfig, "types"> & { types: GeometryType | GeometryType[] }>) {
     super({
-      drawTypes: config?.drawTypes
-        ? Array.isArray(config.drawTypes)
-          ? config.drawTypes
-          : [config.drawTypes]
+      types: config?.types
+        ? Array.isArray(config.types)
+          ? config.types
+          : [config.types]
         : ["LineString", "Polygon", "MultiLineString", "MultiPolygon"],
       create: config?.create ?? true,
       append: config?.append ?? true,
       subtract: config?.subtract ?? true,
+      filter: config?.filter ?? (() => true),
     });
-    this._handleCanvasMouseMove = this._handleCanvasMouseMove.bind(this);
-    this._handleCanvasClick = this._handleCanvasClick.bind(this);
-    this._handlePointMouseEnter = this._handlePointMouseEnter.bind(this);
-    this._handlePointMouseDown = this._handlePointMouseDown.bind(this);
-    this._handleCanvasLeave = this._handleCanvasLeave.bind(this);
-    this._handleKeyPress = this._handleKeyPress.bind(this);
+    this._canvasmove = this._canvasmove.bind(this);
+    this._canvasdown = this._canvasdown.bind(this);
+    this._canvasleave = this._canvasleave.bind(this);
+    this._pointenter = this._pointenter.bind(this);
+    this._pointdown = this._pointdown.bind(this);
+    this._keypress = this._keypress.bind(this);
   }
 
-  private _getShapeGeometry(next?: Position) {
+  get icon() {
+    return `<g fill="none" transform="translate(-4 -4)">${
+      hasPolygon(this.config.types) && hasLineString(this.config.types)
+        ? iconShape + iconCenter
+        : hasPolygon(this.config.types)
+          ? config.polygonShape
+          : config.lineShapeBase + config.lineShapeFill
+    }</g>`;
+  }
+
+  public start(props?: Record<string, unknown>) {
+    if (!this.config.types.length) {
+      this.core.isolate([]);
+      this._stored.cursor = this.core.setCursor(this.cursor("disabled", "not-allowed"));
+      this.core.render("points", []);
+      return;
+    }
+
+    super.start();
+    this._state.props = props ?? this._state.props;
+    this._stored.active = this.core.state.features.get("active");
+    this._isolate({});
+  }
+
+  public enable() {
+    if (!this.disabled) return;
+    super.enable();
+    this._stored.cursor = this.core.setCursor(this.cursor("default", "crosshair"));
+    this._state.event && this._canvasmove(this._state.event);
+    this.core.addListener("mousemove", this._canvasmove);
+    this.core.addListener("mouseenter", "points", this._pointenter);
+    this.core.addListener("mousedown", "points", this._pointdown);
+    this.core.addListener("mousedown", this._canvasdown);
+    this.core.addListener("mouseout", this._canvasleave);
+    document.addEventListener("keydown", this._keypress);
+    document.addEventListener("keyup", this._keypress);
+  }
+
+  public disable() {
+    if (this._state.dragging) {
+      this.disabled = true;
+      return;
+    }
+    if (this.disabled) return;
+    super.disable();
+    this._stored.cursor?.();
+    this._render();
+    document.removeEventListener("keydown", this._keypress);
+    document.removeEventListener("keyup", this._keypress);
+    this.core.removeListener("mousemove", this._canvasmove);
+    this.core.removeListener("mouseout", this._canvasleave);
+    this.core.removeListener("mousedown", this._canvasdown);
+    this.core.removeListener("mousedown", "points", this._pointdown);
+    this.core.removeListener("mouseenter", "points", this._pointenter);
+  }
+
+  public finish() {
+    this._save();
+    this._state = { modes: {}, props: this._state.props, reversed: false };
+    super.finish();
+  }
+
+  public delete(indices: number[]): boolean | void {
+    if (!this._state.geometry) return;
+
+    if (indices.map(lib.array.plain).includes(this.core.features.length)) {
+      if (indices.length === 1) {
+        this.core.state.features.set("active", this._stored.active);
+        this._reset();
+        this.core.features = this.core.features;
+        return true;
+      }
+
+      this._reset();
+      return;
+    }
+
+    if (this._state.feature) this._reset();
+    return;
+  }
+
+  public refresh() {
+    if (this._state.geometry) {
+      const active = this.core.state.features.get("active");
+      if (active.length && !active.map(lib.array.plain).includes(lib.array.plain(this._state.nesting ?? []))) {
+        this._save(active);
+        this._reset();
+        this._isolate({});
+        return;
+      }
+
+      // if (!this._state.feature) {
+      //   this.core.isolate([this.core.features.length]);
+      //   if (active.length && !active.map(lib.array.plain).includes(this.core.features.length))
+      //     this.core.state.features.set("active", [this.core.features.length]);
+      //
+      //   return this._render();
+      // }
+    }
+
+    this._reset();
+    this._isolate({});
+  }
+
+  protected cursor(key: string, fallback: string) {
+    return `url(${lib.createCursor(
+      `<g fill="none" stroke="#000">${iconCenter}${iconShape}</g>`,
+      `<g fill="#FFF" stroke="#FFF">${iconShape}</g>`,
+      key,
+    )}) 8 8, ${fallback}`;
+  }
+
+  protected _keypress(e: KeyboardEvent) {
+    this._isolate(e);
+  }
+
+  protected _canvasmove(e: SourceEvent) {
+    this._state.event = e;
+
+    if (this._state.geometry) {
+      const point = e.points
+        .filter(this.config.filter)
+        .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+      if (point) {
+        this._render(undefined, point);
+        this.core.setCursor(
+          this.cursor(
+            this._type((point.nesting[point.nesting.length - 1] === 0) === this._state.reversed) === "LineString"
+              ? "line"
+              : "polygon",
+            "pointer",
+          ),
+        );
+      } else {
+        this.core.setCursor(this.cursor("default", "crosshair"));
+      }
+
+      !point && this._render(e.position);
+      return;
+    }
+
+    this.core.state.features.set("hover", []);
+
+    if (this._state.modes.extend) {
+      const point = e.points
+        .filter(this.config.filter)
+        .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+      if (point) {
+        return this.core.setCursor(this.cursor("extend", "crosshair"));
+      }
+    }
+
+    if (this._state.modes.subtract) {
+      const disabled = this.core.state.features.get("disabled").map(lib.array.plain);
+      const plane = e.planes.filter(this.config.filter).find((p) => !disabled.includes(p.nesting[0]));
+      this.core.state.points.set("hover", []);
+      if (plane) {
+        this.core.state.features.set("hover", [plane.nesting]);
+        return this.core.setCursor(this.cursor("minus", "crosshair"));
+      }
+    }
+
+    if (this._state.modes.create) return this.core.setCursor(this.cursor("default", "crosshair"));
+    if (this._state.modes.append) return this.core.setCursor(this.cursor("plus", "crosshair"));
+    return this.core.setCursor(this.cursor("disabled", "not-allowed"));
+  }
+
+  protected _canvasdown(e: SourceEvent) {
+    e.preventDefault();
+    this._state.dragging = true;
+    let event = e;
+
+    const _onmousemove = (ev: SourceEvent) => {
+      event = ev;
+    };
+
+    const _onmouseup = () => {
+      e.preventDefault();
+      this._state.dragging = false;
+      this.core.removeListener("mousemove", _onmousemove);
+      this._state.geometry ? this._add(event, this._state.geometry) : this._create(e);
+      if (this.disabled) {
+        this.disabled = false;
+        this.disable();
+      }
+    };
+    this.core.addListener("mousemove", _onmousemove);
+    document.addEventListener("mouseup", _onmouseup, { once: true });
+  }
+
+  protected _pointenter(e: SourceEvent) {
+    const point = e.points
+      .filter(this.config.filter)
+      .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+    if (!point) return;
+
+    const _onmousemove = (ev: SourceEvent) => {
+      if (point && lib.array.equal(ev.points[0].nesting ?? [], point.nesting)) return;
+      this.core.state.points.set("hover", [ev.points[0].nesting]);
+    };
+
+    const _onmouseleave = () => {
+      this.core.state.points.set("hover", []);
+      this.core.removeListener("mouseleave", "points", _onmouseleave);
+      this.core.removeListener("mousemove", "points", _onmousemove);
+    };
+
+    this.core.addListener("mouseleave", "points", _onmouseleave);
+    this.core.addListener("mousemove", "points", _onmousemove);
+    this.core.state.points.set("hover", [point.nesting]);
+  }
+
+  protected _pointdown(e: SourceEvent) {
+    const point = e.points
+      .filter(this.config.filter)
+      .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+    if (!point) return;
+    e.preventDefault();
+
+    const _onmouseup = () => this.core.state.points.remove("active", [point.nesting]);
+    this.core.state.points.add("active", [point.nesting]);
+    document.addEventListener("mouseup", _onmouseup, { once: true });
+  }
+
+  protected _canvasleave() {
+    this._state.event = undefined;
+    if (!this._state.geometry) return;
+    this._render();
+  }
+
+  private _create(e: SourceEvent) {
+    const point = e.points
+      .filter(this.config.filter)
+      .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+
+    if (point) {
+      if (this._state.modes.extend) {
+        this.core.state.points.remove("hover", [point.nesting]);
+        this._state.geometry = [];
+        this._state.feature = this.core.getFeatures([point.nesting[0]])[0];
+        this._state.nesting = point.nesting.slice(0, point.nesting.length - 1);
+        this.core.state.features.set("active", [this._state.nesting]);
+        this._state.reversed = point.nesting[point.nesting.length - 1] === 0;
+        this.core.isolate();
+        this._render();
+      }
+      return;
+    }
+
+    const active = this.core.state.features.get("active").map(lib.array.plain);
+    if (this._state.modes.subtract) {
+      const plane = e.planes.filter(this.config.filter).find((p) => active.includes(p.nesting[0]));
+      if (plane) {
+        this._state.feature = this.core.getFeatures([plane.nesting[0]])[0];
+        if (!this._state.feature) return;
+        this._state.nesting =
+          this._state.feature.type === "Polygon"
+            ? [...plane.nesting, this._state.feature.coordinates.length]
+            : [...plane.nesting, this._state.feature.coordinates[plane.nesting[1]].length];
+        this.core.state.features.set("active", [this._state.nesting]);
+        this._state.geometry = [e.position];
+        this.core.isolate();
+        this._render();
+        return;
+      }
+    }
+
+    if (this._state.modes.create) {
+      const count = this.core.features.length;
+      this._state.geometry = [e.position];
+      this._state.nesting = hasLineString(this.config.types) ? [count] : [count, 0];
+      this.core.state.features.set("active", [this._state.nesting]);
+      this.core.isolate();
+      this._render();
+      return;
+    }
+
+    if (this._state.modes.append) {
+      this._state.feature = this.core.getFeatures(this.core.state.features.get("active"))[0];
+      if (!this._state.feature) return;
+
+      if (lib.isPolygonLike(this._state.feature) && this.config.types.includes("MultiPolygon")) {
+        this._state.nesting = [
+          ...this._state.feature.nesting,
+          this._state.feature.type === "Polygon" ? 1 : this._state.feature.coordinates.length,
+          0,
+        ];
+        this.core.state.features.set("active", [this._state.nesting]);
+      } else if (!lib.isPolygonLike(this._state.feature) && this.config.types.includes("MultiLineString")) {
+        this._state.nesting = [
+          ...this._state.feature.nesting,
+          this._state.feature.type === "LineString" ? 1 : this._state.feature.coordinates.length,
+        ];
+        this._state.modes.extend = false;
+        this.core.state.features.set("active", [this._state.nesting]);
+      } else return;
+
+      this._state.geometry = [e.position];
+      this._render();
+    }
+  }
+
+  private _add(e: SourceEvent, geometry: Position[]) {
+    const point = e.points
+      .filter(this.config.filter)
+      .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
+    if (point) return this._end(point);
+
+    /* Add draw point */
+    this._state.geometry = this._state.reversed ? [e.position, ...geometry] : [...geometry, e.position];
+    this._render();
+    this.core.setCursor(this.cursor(this._type() === "LineString" ? "line" : "polygon", "pointer"));
+    return;
+  }
+
+  private _end(point: Point) {
+    const feature = this._mutate(this._shape(), point) as Feature;
+    this.core.state.points.remove("hover", [point.nesting]);
+    if (!this._stored.active.some((n) => Array.isArray(n)))
+      this.core.state.features.set("active", this.core.state.features.get("active").map(lib.array.plain));
+    this._reset();
+    this.core.features = [
+      ...this.core.features.slice(0, feature.nesting[0]),
+      feature,
+      ...this.core.features.slice(feature.nesting[0] + 1),
+    ];
+  }
+
+  private _shape(next?: Position) {
     const shape = this._state.feature
       ? lib.toPositions(lib.getCoordinates(this._state.feature, this._state.nesting ?? []), this._state.feature.type)
       : [];
@@ -57,20 +390,22 @@ export class PenTool extends AnyTool {
       : [...shape, ...(this._state.geometry || []), ...(next ? [next] : [])];
   }
 
-  private _getRenderType(end = true, placeholder = false) {
-    return !this._state.feature || (this._state.feature.type === "LineString" && !this._state.modes.append)
-      ? placeholder || ((hasLineString(this.config.drawTypes) || this._state.feature?.type === "LineString") && end)
+  private _type(end = true, placeholder = false) {
+    return !this._state.feature || (this._state.feature.type === "LineString" && this._state.modes.extend)
+      ? placeholder ||
+        !hasPolygon(this.config.types) ||
+        ((hasLineString(this.config.types) || this._state.feature?.type === "LineString") && end)
         ? "LineString"
         : "Polygon"
       : this._state.feature.type;
   }
 
-  private _mutateFeature(geometry: Position[], point?: Point) {
+  private _mutate(geometry: Position[], point?: Point) {
     if (!this._state.nesting) return;
 
     const placeholder = geometry.length < 3;
     const end = !point || (point.nesting[point.nesting.length - 1] === 0) === this._state.reversed;
-    const renderType = this._getRenderType(end, placeholder);
+    const renderType = this._type(end, placeholder);
 
     return lib.mutateFeature(
       this._state.feature
@@ -81,7 +416,7 @@ export class PenTool extends AnyTool {
         : ({ nesting: this._state.nesting, type: renderType, props: this._state.props } as Feature),
       lib.array.array(this._state.nesting),
       lib.toCoordinates(geometry, renderType),
-      [...this.config.drawTypes, ...(this._state.feature ? [this._state.feature.type] : [])],
+      [...this.config.types, ...(this._state.feature ? [this._state.feature.type] : [])],
     );
   }
 
@@ -96,11 +431,11 @@ export class PenTool extends AnyTool {
 
   private _render(next?: Position, hover?: Point) {
     if (!this._state.geometry || !this._state.nesting) return;
-    const _geometry = this._getShapeGeometry();
+    const _geometry = this._shape();
     const _next = next ? (this._state.reversed ? [next, ..._geometry] : [..._geometry, next]) : _geometry;
     const _props = this._state.feature ? this._state.feature.props : this._state.props;
 
-    if (Number(this._getRenderType(true, false) === "LineString") + _geometry.length < 3) {
+    if (Number(this._type(true, false) === "LineString") + _geometry.length < 3) {
       this.core.state.points.set("disabled", [
         [...this._state.nesting, -1],
         [...this._state.nesting, 0],
@@ -109,13 +444,13 @@ export class PenTool extends AnyTool {
     } else {
       this.core.state.points.set("disabled", [
         [...this._state.nesting, -1],
-        ...(this._getRenderType(false, _geometry.length < 3) === "LineString"
+        ...(this._type(false, _geometry.length < 3) === "LineString"
           ? [[...this._state.nesting, this._state.reversed ? _geometry.length - 1 : 0]]
           : []),
       ]);
     }
 
-    if (Number(this._getRenderType(true, false) === "LineString") + _next.length < 3) {
+    if (Number(this._type(true, false) === "LineString") + _next.length < 3) {
       /** Placeholder line */
       const _feature = {
         nesting: this._state.nesting,
@@ -127,7 +462,7 @@ export class PenTool extends AnyTool {
     } else {
       this.core.render("features", [
         ...this.core.features.slice(0, this._state.nesting[0]),
-        this._mutateFeature(_next, hover) as Feature,
+        this._mutate(_next, hover) as Feature,
         ...this.core.features.slice(this._state.nesting[0] + 1),
       ]);
     }
@@ -145,202 +480,8 @@ export class PenTool extends AnyTool {
             props: _props,
           },
         ] as Point[]
-      ).filter(this.filter),
+      ).filter(this.config.filter),
     );
-  }
-
-  private _handleKeyPress(ev: KeyboardEvent) {
-    this._isolate(ev);
-  }
-
-  private _handleCanvasMouseMove(e: SourceEvent) {
-    this._state.event = e;
-
-    if (this._state.geometry) {
-      const point = e.points
-        .filter(this.filter)
-        .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
-      if (point) {
-        this._render(undefined, point);
-        this.core.setCursor(
-          generateCursor(
-            this._getRenderType((point.nesting[point.nesting.length - 1] === 0) === this._state.reversed) ===
-              "LineString"
-              ? "line"
-              : "polygon",
-            "pointer",
-            this._state.props?.color?.toString(),
-          ),
-        );
-      } else {
-        this.core.setCursor(generateCursor("default", "crosshair", this._state.props?.color?.toString()));
-      }
-
-      !point && this._render(e.position);
-      return;
-    }
-
-    this.core.state.features.set("hover", []);
-
-    if (this._state.modes.extend) {
-      const point = e.points
-        .filter(this.filter)
-        .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
-      if (point) {
-        return this.core.setCursor(generateCursor("extend", "crosshair", this._state.props?.color?.toString()));
-      }
-    }
-
-    if (this._state.modes.subtract) {
-      const disabled = this.core.state.features.get("disabled").map(lib.array.plain);
-      const plane = e.planes.filter(this.filter).find((p) => !disabled.includes(p.nesting[0]));
-      this.core.state.points.set("hover", []);
-      if (plane) {
-        this.core.state.features.set("hover", [plane.nesting]);
-        return this.core.setCursor(generateCursor("minus", "crosshair", this._state.props?.color?.toString()));
-      }
-    }
-
-    if (this._state.modes.create)
-      return this.core.setCursor(generateCursor("default", "crosshair", this._state.props?.color?.toString()));
-    if (this._state.modes.append)
-      return this.core.setCursor(generateCursor("plus", "crosshair", this._state.props?.color?.toString()));
-    return this.core.setCursor(generateCursor("disabled", "not-allowed", this._state.props?.color?.toString()));
-  }
-
-  private _handleCanvasClick(e: SourceEvent) {
-    const point = e.points.filter(this.filter).find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
-
-    if (point) {
-      if (this._state.geometry) {
-        const feature = this._mutateFeature(this._getShapeGeometry(), point) as Feature;
-        this.core.state.points.remove("hover", [point.nesting]);
-        if (!this._stored.active.some((n) => Array.isArray(n)))
-          this.core.state.features.set("active", this.core.state.features.get("active").map(lib.array.plain));
-        this._reset();
-        this.core.features = [
-          ...this.core.features.slice(0, feature.nesting[0]),
-          feature,
-          ...this.core.features.slice(feature.nesting[0] + 1),
-        ];
-
-        return;
-      }
-
-      if (this._state.modes.extend) {
-        this.core.state.points.remove("hover", [point.nesting]);
-        this._state.geometry = [];
-        this._state.feature = this.core.getFeatures([point.nesting[0]])[0];
-        this._state.nesting = point.nesting.slice(0, point.nesting.length - 1);
-        this.core.state.features.set("active", [this._state.nesting]);
-        this._state.reversed = point.nesting[point.nesting.length - 1] === 0;
-        this.core.isolateFeatures();
-        this._render();
-      }
-      return;
-    }
-
-    if (this._state.geometry) {
-      this._state.geometry = this._state.reversed
-        ? [e.position, ...this._state.geometry]
-        : [...this._state.geometry, e.position];
-      this._render();
-      this.core.setCursor(
-        generateCursor(
-          this._getRenderType() === "LineString" ? "line" : "polygon",
-          "pointer",
-          this._state.props?.color?.toString(),
-        ),
-      );
-      return;
-    }
-
-    const active = this.core.state.features.get("active").map(lib.array.plain);
-    if (this._state.modes.subtract) {
-      const plane = e.planes.filter(this.filter).find((p) => active.includes(p.nesting[0]));
-      if (plane) {
-        this._state.feature = this.core.getFeatures([plane.nesting[0]])[0];
-        if (!this._state.feature) return;
-
-        this._state.nesting =
-          this._state.feature.type === "Polygon"
-            ? [...plane.nesting, this._state.feature.coordinates.length]
-            : [...plane.nesting, this._state.feature.coordinates[plane.nesting[1]].length];
-        this.core.state.features.set("active", [this._state.nesting]);
-        this._state.geometry = [e.position];
-        this.core.isolateFeatures();
-        this._render();
-        return;
-      }
-    }
-
-    if (this._state.modes.create) {
-      const count = this.core.features.length;
-      this._state.geometry = [e.position];
-      this._state.nesting = hasLineString(this.config.drawTypes) ? [count] : [count, 0];
-      this.core.state.features.set("active", [this._state.nesting]);
-      this.core.isolateFeatures();
-      this._render();
-      return;
-    }
-
-    if (this._state.modes.append) {
-      this._state.feature = this.core.getFeatures(this.core.state.features.get("active"))[0];
-      if (!this._state.feature) return;
-
-      if (lib.isPolygonLike(this._state.feature) && this.config.drawTypes.includes("MultiPolygon")) {
-        this._state.nesting = [
-          ...this._state.feature.nesting,
-          this._state.feature.type === "Polygon" ? 1 : this._state.feature.coordinates.length,
-          0,
-        ];
-        this.core.state.features.set("active", [this._state.nesting]);
-      } else if (!lib.isPolygonLike(this._state.feature) && this.config.drawTypes.includes("MultiLineString")) {
-        this._state.nesting = [
-          ...this._state.feature.nesting,
-          this._state.feature.type === "LineString" ? 1 : this._state.feature.coordinates.length,
-        ];
-        this.core.state.features.set("active", [this._state.nesting]);
-      } else return;
-
-      this._state.geometry = [e.position];
-      this._render();
-    }
-  }
-
-  private _handlePointMouseEnter(e: SourceEvent) {
-    const point = e.points.filter(this.filter).find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
-    if (!point) return;
-
-    const _onMove = (ev: SourceEvent) => {
-      if (point && lib.array.equal(ev.points[0].nesting ?? [], point.nesting)) return;
-      this.core.state.points.set("hover", [ev.points[0].nesting]);
-    };
-
-    const _onLeave = () => {
-      this.core.state.points.set("hover", []);
-      this.core.removeListener("mouseleave", "points", _onLeave);
-      this.core.removeListener("mousemove", "points", _onMove);
-    };
-
-    this.core.addListener("mouseleave", "points", _onLeave);
-    this.core.addListener("mousemove", "points", _onMove);
-    this.core.state.points.set("hover", [point.nesting]);
-  }
-
-  private _handlePointMouseDown(e: SourceEvent) {
-    const point = e.points.filter(this.filter).find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
-    if (!point) return;
-    this.core.state.points.add("active", [point.nesting]);
-    document.addEventListener("mouseup", () => this.core.state.points.remove("active", [point.nesting]), {
-      once: true,
-    });
-  }
-
-  private _handleCanvasLeave() {
-    this._state.event = undefined;
-    if (!this._state.geometry) return;
-    this._render();
   }
 
   private _isolate(state: { shiftKey?: boolean; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }) {
@@ -354,8 +495,8 @@ export class PenTool extends AnyTool {
       .filter(
         (f) =>
           f.type === "LineString" ||
-          (f.type === "MultiLineString" && hasLineString(this.config.drawTypes)) ||
-          (hasPolygon(this.config.drawTypes) && lib.isPolygonLike(f)),
+          (f.type === "MultiLineString" && hasLineString(this.config.types)) ||
+          (hasPolygon(this.config.types) && lib.isPolygonLike(f)),
       )
       .map((f) => f.nesting[0]);
 
@@ -363,7 +504,7 @@ export class PenTool extends AnyTool {
       "active",
       this.core.state.features.get("active").filter((n) => _indices.includes(lib.array.plain(n))),
     );
-    this.core.render("points", lib.createPoints(this.core.features, _indices).filter(this.filter));
+    this.core.render("points", lib.createPoints(this.core.features, _indices).filter(this.config.filter));
     this.core.render("features", this.core.features);
 
     const points: Point[] = [];
@@ -388,12 +529,12 @@ export class PenTool extends AnyTool {
       points.map((p) => p.nesting),
     );
     this.core.state.points.set("active", []);
-    this.core.render("points", points.filter(this.filter));
+    this.core.render("points", points.filter(this.config.filter));
 
-    this.core.isolateFeatures(_indices.map(lib.array.array));
+    this.core.isolate(_indices.map(lib.array.array));
 
     this._state.event &&
-      this._handleCanvasMouseMove({
+      this._canvasmove({
         ...this._state.event,
         originalEvent: {
           ...this._state.event.originalEvent,
@@ -406,13 +547,13 @@ export class PenTool extends AnyTool {
     return;
   }
 
-  private _finish(selected?: (number | number[])[]) {
+  private _save(selected?: (number | number[])[]) {
     if (!this._state.nesting) return this.core.state.features.set("active", selected ?? this._stored.active);
 
-    const _geometry = this._getShapeGeometry();
+    const _geometry = this._shape();
     this._state.geometry = undefined;
 
-    if (Number(this._getRenderType(true, false) === "LineString") + _geometry.length < 3) {
+    if (Number(this._type(true, false) === "LineString") + _geometry.length < 3) {
       this.core.render("features", this.core.features);
       return this.core.state.features.set("active", selected ?? this._stored.active);
     }
@@ -422,91 +563,14 @@ export class PenTool extends AnyTool {
 
     this.core.features = [
       ...this.core.features.slice(0, this._state.nesting[0]),
-      this._mutateFeature(_geometry, undefined) as Feature,
+      this._mutate(_geometry, undefined) as Feature,
       ...this.core.features.slice(this._state.nesting[0] + 1),
     ];
   }
-
-  public refresh() {
-    if (this._state.geometry) {
-      const active = this.core.state.features.get("active");
-      if (active.length && !active.map(lib.array.plain).includes(lib.array.plain(this._state.nesting ?? []))) {
-        this._finish(active);
-        this._reset();
-        this._isolate({});
-        return;
-      }
-
-      if (!this._state.feature) {
-        this.core.isolateFeatures([this.core.features.length]);
-        if (active.length && !active.map(lib.array.plain).includes(this.core.features.length))
-          this.core.state.features.set("active", [this.core.features.length]);
-
-        return this._render();
-      }
-    }
-
-    this._reset();
-    this._isolate({});
-  }
-
-  public enable(props?: Record<string, unknown>) {
-    if (!this.config.drawTypes.length) {
-      this.core.isolateFeatures([]);
-      this._stored.cursor = this.core.setCursor(
-        generateCursor("disabled", "not-allowed", this._state.props?.color?.toString()),
-      );
-      this.core.render("points", []);
-      return;
-    }
-
-    this._state.props = props;
-    this._stored.cursor = this.core.setCursor(
-      generateCursor("default", "crosshair", this._state.props?.color?.toString()),
-    );
-    this.refresh();
-
-    this.core.addListener("mouseenter", "points", this._handlePointMouseEnter);
-    this.core.addListener("mousedown", "points", this._handlePointMouseDown);
-    this.core.addListener("mousemove", this._handleCanvasMouseMove);
-    this.core.addListener("click", this._handleCanvasClick);
-    this.core.addListener("mouseout", this._handleCanvasLeave);
-    document.addEventListener("keydown", this._handleKeyPress);
-    document.addEventListener("keyup", this._handleKeyPress);
-  }
-
-  public delete(indices: number[]): boolean | void {
-    if (!this._state.geometry) return;
-
-    if (indices.map(lib.array.plain).includes(this.core.features.length)) {
-      if (indices.length === 1) {
-        this.core.state.features.set("active", this._stored.active);
-        this._reset();
-        this.core.features = this.core.features;
-        return true;
-      }
-
-      this._reset();
-      return;
-    }
-
-    if (this._state.feature) this._reset();
-    return;
-  }
-
-  public disable() {
-    super.disable();
-    document.removeEventListener("keydown", this._handleKeyPress);
-    document.removeEventListener("keyup", this._handleKeyPress);
-    this.core.removeListener("mouseout", this._handleCanvasLeave);
-    this.core.removeListener("mousemove", this._handleCanvasMouseMove);
-    this.core.removeListener("click", this._handleCanvasClick);
-    this.core.removeListener("mousedown", "points", this._handlePointMouseDown);
-    this.core.removeListener("mouseenter", "points", this._handlePointMouseEnter);
-    this._stored.cursor?.();
-    this._finish();
-  }
 }
+
+const iconShape = `<circle cx="15.5" cy="15.5" r="1.5" /><path d="M11.75 20C9.5 17.5 9.5 11.5 8 8C11.5 9.5 17.5 9.5 20 11.75C21.6377 13.2239 21.8802 15.8055 21.2345 17.8649C21.1122 18.2552 21.1897 18.6897 21.4789 18.9789L23.5 21L21 23.5L18.9789 21.4789C18.6897 21.1897 18.2552 21.1122 17.8649 21.2345C15.8055 21.8802 13.2239 21.6377 11.75 20Z" stroke-linejoin="round"/>`;
+const iconCenter = `<path d="M8 8L14.375 14.375" stroke-linejoin="round"/>`;
 
 export const defineModes = (
   config: PenToolConfig,
@@ -517,21 +581,26 @@ export const defineModes = (
   const modes = ["append", "subtract", "create"] as (keyof Pick<PenToolConfig, "append" | "subtract" | "create">)[];
   const matched = modes.filter((mode) => {
     if (!config[mode]) return false;
-    if (typeof config[mode] === "string") return Boolean(state[config[mode] as keyof typeof state]);
-    return !modes.filter((m) => m !== mode && typeof config[m] === "string" && state[config[m] as keyof typeof state])
-      .length;
+    if (typeof config[mode] === "string") return Boolean(state[lib.getModifierKey(config[mode] as KeyModifier)]);
+    return !modes.filter(
+      (m) =>
+        m !== mode &&
+        typeof config[m] === "string" &&
+        state[lib.getModifierKey(config[m] as KeyModifier) as keyof typeof state],
+    ).length;
   });
+
   return {
     subtract: !(
       !features.length ||
       !matched.includes("subtract") ||
-      !hasPolygon(config.drawTypes) ||
+      !hasPolygon(config.types) ||
       !features.some((f) => lib.isPolygonLike(f))
     ),
     extend: !(
       !features.length ||
       !matched.includes("append") ||
-      !features.some((f) => (hasLineString(config.drawTypes) && !lib.isPolygonLike(f)) || f.type === "LineString")
+      !features.some((f) => (hasLineString(config.types) && !lib.isPolygonLike(f)) || f.type === "LineString")
     ),
     append: !(
       features.length !== 1 ||
@@ -539,8 +608,8 @@ export const defineModes = (
       !(isolated || !matched.includes("create")) ||
       !features.some(
         (f) =>
-          (lib.isPolygonLike(f) && config.drawTypes.includes("MultiPolygon")) ||
-          (!lib.isPolygonLike(f) && config.drawTypes.includes("MultiLineString")),
+          (lib.isPolygonLike(f) && config.types.includes("MultiPolygon")) ||
+          (!lib.isPolygonLike(f) && config.types.includes("MultiLineString")),
       )
     ),
     create: !(
@@ -549,23 +618,12 @@ export const defineModes = (
   };
 };
 
-const generateCursor = (key: string, fallback: string, color = "black") => {
-  return `url(${lib.createCursor(
-    {
-      shape: `<path d="M8 8C9.5 11.5 9.5 17.5 11.75 20C13.2239 21.6377 15.8055 21.8802 17.8649 21.2345C18.2552 21.1122 18.6897 21.1897 18.9789 21.4789L21 23.5L23.5 21L21.4789 18.9789C21.1897 18.6897 21.1122 18.2552 21.2345 17.8649C21.8802 15.8055 21.6377 13.2239 20 11.75C17.5 9.5 11.5 9.5 8 8ZM8 8L14.375 14.375M14.375 14.375C14.1776 14.629 14 15.1534 14 15.5C14 16.3284 14.6716 17 15.5 17C16.3284 17 17 16.3284 17 15.5C17 14.6716 16.3284 14 15.5 14C15.1534 14 14.629 14.1776 14.375 14.375Z" fill="none" stroke-linejoin="round" stroke="black"/>`,
-      contour: `<path fill-rule="evenodd" clip-rule="evenodd" d="M7.64645 7.64645C7.79102 7.50188 8.00904 7.45989 8.19696 7.54043C9.55773 8.12362 11.3115 8.47165 13.1418 8.83487C13.5839 8.92261 14.0304 9.01122 14.477 9.10426C15.6066 9.3396 16.7269 9.60277 17.728 9.95397C18.7262 10.3041 19.6397 10.7531 20.3345 11.3783C22.1712 13.0314 22.3906 15.8488 21.7116 18.0145C21.6363 18.2546 21.694 18.4869 21.8325 18.6254L23.8536 20.6464C24.0488 20.8417 24.0488 21.1583 23.8536 21.3536L21.3536 23.8536C21.1583 24.0488 20.8417 24.0488 20.6464 23.8536L18.6254 21.8325C18.4869 21.694 18.2546 21.6363 18.0145 21.7116C15.8488 22.3906 13.0314 22.1712 11.3783 20.3345C10.7531 19.6397 10.3041 18.7262 9.95397 17.728C9.60277 16.7269 9.3396 15.6066 9.10426 14.477C9.01122 14.0304 8.92261 13.5839 8.83487 13.1418C8.47165 11.3115 8.12362 9.55773 7.54043 8.19696C7.45989 8.00904 7.50188 7.79102 7.64645 7.64645ZM14.7341 14.7341C14.6883 14.8085 14.6341 14.9225 14.5876 15.0616C14.5287 15.2373 14.5 15.3989 14.5 15.5C14.5 16.0523 14.9477 16.5 15.5 16.5C16.0523 16.5 16.5 16.0523 16.5 15.5C16.5 14.9477 16.0523 14.5 15.5 14.5C15.3989 14.5 15.2373 14.5287 15.0616 14.5876C14.9225 14.6341 14.8085 14.6883 14.7341 14.7341Z" />`,
-    },
-    key,
-    color,
-  )}) 8 8, ${fallback}`;
+const hasLineString = (types: GeometryType | GeometryType[]) => {
+  if (!Array.isArray(types)) return types === "LineString" || types === "MultiLineString";
+  return types.includes("LineString") || types.includes("MultiLineString");
 };
 
-const hasLineString = (drawTypes: DrawType | DrawType[]) => {
-  if (!Array.isArray(drawTypes)) return drawTypes === "LineString" || drawTypes === "MultiLineString";
-  return drawTypes.includes("LineString") || drawTypes.includes("MultiLineString");
-};
-
-const hasPolygon = (drawTypes: DrawType | DrawType[]) => {
-  if (!Array.isArray(drawTypes)) return drawTypes === "Polygon" || drawTypes === "MultiPolygon";
-  return drawTypes.includes("Polygon") || drawTypes.includes("MultiPolygon");
+const hasPolygon = (types: GeometryType | GeometryType[]) => {
+  if (!Array.isArray(types)) return types === "Polygon" || types === "MultiPolygon";
+  return types.includes("Polygon") || types.includes("MultiPolygon");
 };

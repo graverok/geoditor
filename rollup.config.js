@@ -8,12 +8,11 @@ import pkg from "./package.json";
 
 export default [
   {
-    input: "src/main.ts",
-    output: {
-      name: "geoditor",
-      file: pkg.browser,
-      format: "umd",
-    },
+    input: "src/index.ts",
+    output: [
+      { name: "geoditor", file: pkg.browser, format: "umd" },
+      { name: "geoditor", file: "docs/geoditor.min.js", format: "umd" },
+    ],
     plugins: [
       resolve(),
       commonjs(),
@@ -25,7 +24,7 @@ export default [
     ],
   },
   {
-    input: "src/main.ts",
+    input: "src/index.ts",
     output: [
       { file: pkg.main, format: "cjs" },
       { file: pkg.module, format: "es" },
@@ -35,11 +34,10 @@ export default [
         exclude: ["node_modules/**"],
       }),
       typescript(),
-      uglify(),
     ],
   },
   {
-    input: "src/main.ts",
+    input: "src/index.ts",
     output: [{ file: pkg.types, format: "es" }],
     plugins: [dts()],
   },

@@ -119,9 +119,9 @@ export const mapModifiers = (
   config: PenToolConfig,
   callback: (payload: Record<string, ReturnType<typeof expect>>) => void,
 ) => {
-  const { drawTypes, ...rest } = config;
-  callback(mapOptions({ drawTypes, ...rest }, undefined));
-  callback(mapOptions({ drawTypes, ...rest }, { altKey: true }));
+  const { types, ...rest } = config;
+  callback(mapOptions({ types, ...rest }, undefined));
+  callback(mapOptions({ types, ...rest }, { altKey: true }));
 
   const e = Object.keys(rest)
     .filter((k) => (rest as any)[k] === false)
@@ -132,29 +132,26 @@ export const mapModifiers = (
 
   if (i.length === 3) {
     callback(
-      mapOptions(
-        { drawTypes, [i[0]]: "shiftKey", [i[1]]: "shiftKey", [i[2]]: "shiftKey" } as unknown as PenToolConfig,
-        { shiftKey: true },
-      ),
+      mapOptions({ types, [i[0]]: "shift", [i[1]]: "shift", [i[2]]: "shift" } as unknown as PenToolConfig, {
+        shiftKey: true,
+      }),
     );
   }
 
   if (e.length === 1 && i.length === 2) {
+    callback(mapOptions({ types, [e[0]]: "shift", [i[0]]: true, [i[1]]: true } as unknown as PenToolConfig, undefined));
     callback(
-      mapOptions({ drawTypes, [e[0]]: "shiftKey", [i[0]]: true, [i[1]]: true } as unknown as PenToolConfig, undefined),
-    );
-    callback(
-      mapOptions({ drawTypes, [e[0]]: true, [i[0]]: "shiftKey", [i[1]]: "shiftKey" } as unknown as PenToolConfig, {
+      mapOptions({ types, [e[0]]: true, [i[0]]: "shift", [i[1]]: "shift" } as unknown as PenToolConfig, {
         shiftKey: true,
       }),
     );
     callback(
-      mapOptions({ drawTypes, [e[0]]: "shiftKey", [i[0]]: true, [i[1]]: true } as unknown as PenToolConfig, {
+      mapOptions({ types, [e[0]]: "shift", [i[0]]: true, [i[1]]: true } as unknown as PenToolConfig, {
         altKey: true,
       }),
     );
     callback(
-      mapOptions({ drawTypes, [e[0]]: "shiftKey", [i[0]]: "altKey", [i[1]]: "altKey" } as unknown as PenToolConfig, {
+      mapOptions({ types, [e[0]]: "shift", [i[0]]: "alt", [i[1]]: "alt" } as unknown as PenToolConfig, {
         altKey: true,
       }),
     );
@@ -162,32 +159,26 @@ export const mapModifiers = (
 
   if (e.length === 2 && i.length === 1) {
     callback(
-      mapOptions(
-        { drawTypes, [e[0]]: "shiftKey", [e[1]]: "shiftKey", [i[0]]: true } as unknown as PenToolConfig,
-        undefined,
-      ),
+      mapOptions({ types, [e[0]]: "shift", [e[1]]: "shift", [i[0]]: true } as unknown as PenToolConfig, undefined),
     );
     callback(
-      mapOptions({ drawTypes, [e[0]]: "ctrlKey", [e[1]]: "shiftKey", [i[0]]: "altKey" } as unknown as PenToolConfig, {
+      mapOptions({ types, [e[0]]: "ctrl", [e[1]]: "shift", [i[0]]: "alt" } as unknown as PenToolConfig, {
         altKey: true,
       }),
     );
     callback(
-      mapOptions({ drawTypes, [e[0]]: true, [e[1]]: "shiftKey", [i[0]]: "altKey" } as unknown as PenToolConfig, {
+      mapOptions({ types, [e[0]]: true, [e[1]]: "shift", [i[0]]: "alt" } as unknown as PenToolConfig, {
         altKey: true,
       }),
     );
   }
 
   if (e.length === 3) {
+    callback(mapOptions({ types, [i[0]]: "shift", [i[1]]: "shift", [i[2]]: "shift" } as unknown as PenToolConfig));
     callback(
-      mapOptions({ drawTypes, [i[0]]: "shiftKey", [i[1]]: "shiftKey", [i[2]]: "shiftKey" } as unknown as PenToolConfig),
-    );
-    callback(
-      mapOptions(
-        { drawTypes, [i[0]]: "shiftKey", [i[1]]: "shiftKey", [i[2]]: "shiftKey" } as unknown as PenToolConfig,
-        { altKey: true },
-      ),
+      mapOptions({ types, [i[0]]: "shift", [i[1]]: "shift", [i[2]]: "shift" } as unknown as PenToolConfig, {
+        altKey: true,
+      }),
     );
   }
 };
