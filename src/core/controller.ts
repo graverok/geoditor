@@ -25,7 +25,7 @@ export abstract class Controller {
   abstract remove(): void;
   abstract render(type: "features" | "points", items: Feature[] | Point[]): void;
   abstract get renderer(): unknown;
-  abstract onInit(callback?: () => void): void;
+  abstract ready(callback?: VoidFunction): void;
   protected abstract lock(): VoidFunction;
   protected _locked: boolean = false;
 

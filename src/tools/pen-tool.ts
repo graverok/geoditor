@@ -45,12 +45,12 @@ export class PenTool extends AnyTool {
       subtract: config?.subtract ?? true,
       filter: config?.filter ?? (() => true),
     });
-    this.onCanvasMouseMove = this.onCanvasMouseMove.bind(this);
-    this.onCanvasMouseDown = this.onCanvasMouseDown.bind(this);
-    this.onCanvasLeave = this.onCanvasLeave.bind(this);
-    this.onPointMouseEnter = this.onPointMouseEnter.bind(this);
-    this.onPointMouseDown = this.onPointMouseDown.bind(this);
-    this.onKeyPress = this.onKeyPress.bind(this);
+    this._canvasmove = this._canvasmove.bind(this);
+    this._canvasdown = this._canvasdown.bind(this);
+    this._canvasleave = this._canvasleave.bind(this);
+    this._pointenter = this._pointenter.bind(this);
+    this._pointdown = this._pointdown.bind(this);
+    this._keypress = this._keypress.bind(this);
   }
 
   get icon() {
@@ -81,14 +81,14 @@ export class PenTool extends AnyTool {
     if (!this.disabled) return;
     super.enable();
     this._stored.cursor = this.core.setCursor(this.cursor("default", "crosshair"));
-    this._state.event && this.onCanvasMouseMove(this._state.event);
-    this.core.addListener("mousemove", this.onCanvasMouseMove);
-    this.core.addListener("mouseenter", "points", this.onPointMouseEnter);
-    this.core.addListener("mousedown", "points", this.onPointMouseDown);
-    this.core.addListener("mousedown", this.onCanvasMouseDown);
-    this.core.addListener("mouseout", this.onCanvasLeave);
-    document.addEventListener("keydown", this.onKeyPress);
-    document.addEventListener("keyup", this.onKeyPress);
+    this._state.event && this._canvasmove(this._state.event);
+    this.core.addListener("mousemove", this._canvasmove);
+    this.core.addListener("mouseenter", "points", this._pointenter);
+    this.core.addListener("mousedown", "points", this._pointdown);
+    this.core.addListener("mousedown", this._canvasdown);
+    this.core.addListener("mouseout", this._canvasleave);
+    document.addEventListener("keydown", this._keypress);
+    document.addEventListener("keyup", this._keypress);
   }
 
   public disable() {
@@ -100,13 +100,13 @@ export class PenTool extends AnyTool {
     super.disable();
     this._stored.cursor?.();
     this._render();
-    document.removeEventListener("keydown", this.onKeyPress);
-    document.removeEventListener("keyup", this.onKeyPress);
-    this.core.removeListener("mousemove", this.onCanvasMouseMove);
-    this.core.removeListener("mouseout", this.onCanvasLeave);
-    this.core.removeListener("mousedown", this.onCanvasMouseDown);
-    this.core.removeListener("mousedown", "points", this.onPointMouseDown);
-    this.core.removeListener("mouseenter", "points", this.onPointMouseEnter);
+    document.removeEventListener("keydown", this._keypress);
+    document.removeEventListener("keyup", this._keypress);
+    this.core.removeListener("mousemove", this._canvasmove);
+    this.core.removeListener("mouseout", this._canvasleave);
+    this.core.removeListener("mousedown", this._canvasdown);
+    this.core.removeListener("mousedown", "points", this._pointdown);
+    this.core.removeListener("mouseenter", "points", this._pointenter);
   }
 
   public finish() {
@@ -165,11 +165,11 @@ export class PenTool extends AnyTool {
     )}) 8 8, ${fallback}`;
   }
 
-  protected onKeyPress(e: KeyboardEvent) {
+  protected _keypress(e: KeyboardEvent) {
     this._isolate(e);
   }
 
-  protected onCanvasMouseMove(e: SourceEvent) {
+  protected _canvasmove(e: SourceEvent) {
     this._state.event = e;
 
     if (this._state.geometry) {
@@ -180,8 +180,7 @@ export class PenTool extends AnyTool {
         this._render(undefined, point);
         this.core.setCursor(
           this.cursor(
-            this._getRenderType((point.nesting[point.nesting.length - 1] === 0) === this._state.reversed) ===
-              "LineString"
+            this._type((point.nesting[point.nesting.length - 1] === 0) === this._state.reversed) === "LineString"
               ? "line"
               : "polygon",
             "pointer",
@@ -221,7 +220,7 @@ export class PenTool extends AnyTool {
     return this.core.setCursor(this.cursor("disabled", "not-allowed"));
   }
 
-  protected onCanvasMouseDown(e: SourceEvent) {
+  protected _canvasdown(e: SourceEvent) {
     e.preventDefault();
     this._state.dragging = true;
     let event = e;
@@ -234,7 +233,7 @@ export class PenTool extends AnyTool {
       e.preventDefault();
       this._state.dragging = false;
       this.core.removeListener("mousemove", _onmousemove);
-      this._state.geometry ? this._addDrawPoint(event, this._state.geometry) : this._initDraw(e);
+      this._state.geometry ? this._add(event, this._state.geometry) : this._create(e);
       if (this.disabled) {
         this.disabled = false;
         this.disable();
@@ -244,7 +243,7 @@ export class PenTool extends AnyTool {
     document.addEventListener("mouseup", _onmouseup, { once: true });
   }
 
-  protected onPointMouseEnter(e: SourceEvent) {
+  protected _pointenter(e: SourceEvent) {
     const point = e.points
       .filter(this.config.filter)
       .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
@@ -266,7 +265,7 @@ export class PenTool extends AnyTool {
     this.core.state.points.set("hover", [point.nesting]);
   }
 
-  protected onPointMouseDown(e: SourceEvent) {
+  protected _pointdown(e: SourceEvent) {
     const point = e.points
       .filter(this.config.filter)
       .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
@@ -278,13 +277,13 @@ export class PenTool extends AnyTool {
     document.addEventListener("mouseup", _onmouseup, { once: true });
   }
 
-  protected onCanvasLeave() {
+  protected _canvasleave() {
     this._state.event = undefined;
     if (!this._state.geometry) return;
     this._render();
   }
 
-  private _initDraw(e: SourceEvent) {
+  private _create(e: SourceEvent) {
     const point = e.points
       .filter(this.config.filter)
       .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
@@ -356,21 +355,21 @@ export class PenTool extends AnyTool {
     }
   }
 
-  private _addDrawPoint(e: SourceEvent, geometry: Position[]) {
+  private _add(e: SourceEvent, geometry: Position[]) {
     const point = e.points
       .filter(this.config.filter)
       .find((p) => !this.core.state.points.get(p.nesting).includes("disabled"));
-    if (point) return this._endDraw(point);
+    if (point) return this._end(point);
 
     /* Add draw point */
     this._state.geometry = this._state.reversed ? [e.position, ...geometry] : [...geometry, e.position];
     this._render();
-    this.core.setCursor(this.cursor(this._getRenderType() === "LineString" ? "line" : "polygon", "pointer"));
+    this.core.setCursor(this.cursor(this._type() === "LineString" ? "line" : "polygon", "pointer"));
     return;
   }
 
-  private _endDraw(point: Point) {
-    const feature = this._mutateFeature(this._getShapeGeometry(), point) as Feature;
+  private _end(point: Point) {
+    const feature = this._mutate(this._shape(), point) as Feature;
     this.core.state.points.remove("hover", [point.nesting]);
     if (!this._stored.active.some((n) => Array.isArray(n)))
       this.core.state.features.set("active", this.core.state.features.get("active").map(lib.array.plain));
@@ -382,7 +381,7 @@ export class PenTool extends AnyTool {
     ];
   }
 
-  private _getShapeGeometry(next?: Position) {
+  private _shape(next?: Position) {
     const shape = this._state.feature
       ? lib.toPositions(lib.getCoordinates(this._state.feature, this._state.nesting ?? []), this._state.feature.type)
       : [];
@@ -391,7 +390,7 @@ export class PenTool extends AnyTool {
       : [...shape, ...(this._state.geometry || []), ...(next ? [next] : [])];
   }
 
-  private _getRenderType(end = true, placeholder = false) {
+  private _type(end = true, placeholder = false) {
     return !this._state.feature || (this._state.feature.type === "LineString" && this._state.modes.extend)
       ? placeholder ||
         !hasPolygon(this.config.types) ||
@@ -401,12 +400,12 @@ export class PenTool extends AnyTool {
       : this._state.feature.type;
   }
 
-  private _mutateFeature(geometry: Position[], point?: Point) {
+  private _mutate(geometry: Position[], point?: Point) {
     if (!this._state.nesting) return;
 
     const placeholder = geometry.length < 3;
     const end = !point || (point.nesting[point.nesting.length - 1] === 0) === this._state.reversed;
-    const renderType = this._getRenderType(end, placeholder);
+    const renderType = this._type(end, placeholder);
 
     return lib.mutateFeature(
       this._state.feature
@@ -432,11 +431,11 @@ export class PenTool extends AnyTool {
 
   private _render(next?: Position, hover?: Point) {
     if (!this._state.geometry || !this._state.nesting) return;
-    const _geometry = this._getShapeGeometry();
+    const _geometry = this._shape();
     const _next = next ? (this._state.reversed ? [next, ..._geometry] : [..._geometry, next]) : _geometry;
     const _props = this._state.feature ? this._state.feature.props : this._state.props;
 
-    if (Number(this._getRenderType(true, false) === "LineString") + _geometry.length < 3) {
+    if (Number(this._type(true, false) === "LineString") + _geometry.length < 3) {
       this.core.state.points.set("disabled", [
         [...this._state.nesting, -1],
         [...this._state.nesting, 0],
@@ -445,13 +444,13 @@ export class PenTool extends AnyTool {
     } else {
       this.core.state.points.set("disabled", [
         [...this._state.nesting, -1],
-        ...(this._getRenderType(false, _geometry.length < 3) === "LineString"
+        ...(this._type(false, _geometry.length < 3) === "LineString"
           ? [[...this._state.nesting, this._state.reversed ? _geometry.length - 1 : 0]]
           : []),
       ]);
     }
 
-    if (Number(this._getRenderType(true, false) === "LineString") + _next.length < 3) {
+    if (Number(this._type(true, false) === "LineString") + _next.length < 3) {
       /** Placeholder line */
       const _feature = {
         nesting: this._state.nesting,
@@ -463,7 +462,7 @@ export class PenTool extends AnyTool {
     } else {
       this.core.render("features", [
         ...this.core.features.slice(0, this._state.nesting[0]),
-        this._mutateFeature(_next, hover) as Feature,
+        this._mutate(_next, hover) as Feature,
         ...this.core.features.slice(this._state.nesting[0] + 1),
       ]);
     }
@@ -535,7 +534,7 @@ export class PenTool extends AnyTool {
     this.core.isolate(_indices.map(lib.array.array));
 
     this._state.event &&
-      this.onCanvasMouseMove({
+      this._canvasmove({
         ...this._state.event,
         originalEvent: {
           ...this._state.event.originalEvent,
@@ -551,10 +550,10 @@ export class PenTool extends AnyTool {
   private _save(selected?: (number | number[])[]) {
     if (!this._state.nesting) return this.core.state.features.set("active", selected ?? this._stored.active);
 
-    const _geometry = this._getShapeGeometry();
+    const _geometry = this._shape();
     this._state.geometry = undefined;
 
-    if (Number(this._getRenderType(true, false) === "LineString") + _geometry.length < 3) {
+    if (Number(this._type(true, false) === "LineString") + _geometry.length < 3) {
       this.core.render("features", this.core.features);
       return this.core.state.features.set("active", selected ?? this._stored.active);
     }
@@ -564,7 +563,7 @@ export class PenTool extends AnyTool {
 
     this.core.features = [
       ...this.core.features.slice(0, this._state.nesting[0]),
-      this._mutateFeature(_geometry, undefined) as Feature,
+      this._mutate(_geometry, undefined) as Feature,
       ...this.core.features.slice(this._state.nesting[0] + 1),
     ];
   }

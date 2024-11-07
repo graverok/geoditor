@@ -3,14 +3,6 @@ import { Controller, AnyTool, Core } from "./core";
 import { PenTool, MoveTool, HandTool, DeleteTool } from "./tools";
 import * as lib from "./lib";
 
-type Tools = {
-  move: (...args: Parameters<MoveTool["start"]>) => VoidFunction;
-  pen: (...args: Parameters<PenTool["start"]>) => VoidFunction;
-  hand: (...args: Parameters<HandTool["start"]>) => VoidFunction;
-  delete: (...args: Parameters<DeleteTool["start"]>) => VoidFunction;
-  off: () => void;
-} & Record<string, (...args: Parameters<AnyTool["start"]>) => VoidFunction>;
-
 const defaultTools = {
   move: new MoveTool(),
   pen: new PenTool(),
@@ -18,28 +10,28 @@ const defaultTools = {
   delete: new DeleteTool(),
 };
 
-type Config = {
-  controller: Controller;
-  tools?: Record<string, AnyTool>;
+type Config<T, C> = {
+  controller: C;
+  tools?: T;
 };
 
-export class Geoditor {
-  private _tool: string | undefined;
-  private _tools!: Record<string, AnyTool>;
-  private _toolLoader: VoidFunction | undefined;
-  private readonly _core: Core;
-  private readonly _controller: Controller;
-  private _isLoaded = false;
+export class Geoditor<T extends Record<string, AnyTool>, C extends Controller = Controller> {
+  private readonly _controller: C;
+  private _loaded = false;
+  private _requests: VoidFunction[] = [];
   private _selected: (number | number[])[] = [];
   private _listeners: {
     load: (() => void)[];
     select: ((selected: number[]) => void)[];
     change: ((data: geojson.Feature[]) => void)[];
     render: ((data: geojson.Feature[]) => void)[];
-    tool: ((tool?: string) => void)[];
+    tool: ((tool?: keyof T) => void)[];
   } = { load: [], select: [], change: [], render: [], tool: [] };
+  private _tools: T;
+  private _tool?: keyof T;
+  private readonly _core: Core;
 
-  constructor(config: Config) {
+  constructor(config: Config<T, C>) {
     this._core = new Core(config.controller, {
       select: (next: (number | number[])[]) => {
         if (lib.array.equal(this._selected, next)) return;
@@ -55,25 +47,25 @@ export class Geoditor {
       },
     });
     this._controller = config.controller;
-    this._tools = config?.tools ?? defaultTools;
+    this._tools = config?.tools ?? (defaultTools as unknown as T);
     Object.values(this._tools).forEach((t) => t.init(this._core));
-    this._controller.onInit(() => this._onInit());
+    this._controller.ready(() => this._init());
   }
 
   public on(name: "load", callback: () => void): void;
   public on(name: "select", callback: (selected: number[]) => void): void;
-  public on(name: "tool", callback: (tool?: string) => void): void;
+  public on(name: "tool", callback: (tool?: keyof T) => void): void;
   public on(name: "change", callback: (data: geojson.Feature[]) => void): void;
   public on(name: "render", callback: (data: geojson.Feature[]) => void): void;
   public on(name: "load" | "select" | "change" | "render" | "tool", callback: (...args: any) => void) {
     if (this._listeners[name].find((f) => f === callback)) return;
     this._listeners[name].push(callback);
-    name === "load" && this._isLoaded && callback();
+    name === "load" && this._loaded && callback();
   }
 
   public off(name: "load", callback: () => void): void;
   public off(name: "select", callback: (selected: number[]) => void): void;
-  public off(name: "tool", callback: (tool?: string) => void): void;
+  public off(name: "tool", callback: (tool?: keyof T) => void): void;
   public off(name: "change", callback: (data: geojson.Feature[]) => void): void;
   public off(name: "render", callback: (data: geojson.Feature[]) => void): void;
   public off(name: "load" | "select" | "change" | "render" | "tool", callback: (...args: any) => void) {
@@ -108,9 +100,9 @@ export class Geoditor {
 
   get tools() {
     return Object.keys(this._tools).reduce(
-      (tools, key) => ({
+      (tools, key: keyof T) => ({
         ...tools,
-        [key]: (...args: Parameters<Tools[typeof key]>) => {
+        [key]: (...args: Parameters<T[typeof key]["start"]>) => {
           const current = this._tool && this._tool !== key ? this._tools[this._tool] : undefined;
           const loader = () => {
             const res = this._tools[key]?.on(current, ...args);
@@ -120,8 +112,9 @@ export class Geoditor {
             }
           };
 
-          if (this._isLoaded) loader();
-          else this._toolLoader = loader;
+          if (this._loaded) loader();
+          else this._requests.push(loader);
+
           return () => {
             this._tools[key].off();
           };
@@ -134,12 +127,12 @@ export class Geoditor {
           this._listeners.tool.filter((f) => f());
           this._core.reset();
         },
-      } as Tools,
+      } as { off: VoidFunction } & { [K in keyof T]: (...args: Parameters<T[K]["start"]>) => VoidFunction },
     );
   }
 
-  public icon(key: keyof typeof this.tools, stroke?: number, color?: string) {
-    return lib.createIcon(this._tools[key].icon, stroke, color);
+  public icon(key: keyof T | string, stroke?: number, color?: string) {
+    return lib.createIcon(this._tools[key]?.icon, stroke, color);
   }
 
   public remove() {
@@ -148,10 +141,11 @@ export class Geoditor {
     this._core.remove();
   }
 
-  private _onInit() {
-    this._isLoaded = true;
+  private _init() {
+    this._loaded = true;
     this._core.init();
-    this._toolLoader?.();
+    this._requests.forEach((c) => c());
+    this._requests = [];
     this._listeners.load.forEach((f) => f());
   }
 }

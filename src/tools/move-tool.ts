@@ -22,14 +22,14 @@ export class MoveTool extends AnyTool {
       modify: config?.modify ?? true,
       filter: config?.filter ?? (() => true),
     });
-    this.onCanvasClick = this.onCanvasClick.bind(this);
-    this.onCanvasLeave = this.onCanvasLeave.bind(this);
-    this.onFeatureHover = this.onFeatureHover.bind(this);
-    this.onGeometryMouseDown = this.onGeometryMouseDown.bind(this);
-    this.onGeometryDblClick = this.onGeometryDblClick.bind(this);
-    this.onPointHover = this.onPointHover.bind(this);
-    this.onPointDrag = this.onPointDrag.bind(this);
-    this.onKeyPress = this.onKeyPress.bind(this);
+    this._canvasclick = this._canvasclick.bind(this);
+    this._canvasleave = this._canvasleave.bind(this);
+    this._featurehover = this._featurehover.bind(this);
+    this._shapedrag = this._shapedrag.bind(this);
+    this._shapedblclick = this._shapedblclick.bind(this);
+    this._pointhover = this._pointhover.bind(this);
+    this._pointdrag = this._pointdrag.bind(this);
+    this._keypress = this._keypress.bind(this);
   }
 
   get icon() {
@@ -39,24 +39,24 @@ export class MoveTool extends AnyTool {
   public refresh() {
     this.core.render("features", this._state.features ?? this.core.features);
     this.core.isolate();
-    this._renderPoints();
+    this._render();
   }
 
   public enable() {
     if (!this.disabled) return;
     super.enable();
     this._stored.cursor = this.core.setCursor("default");
-    this.core.addListener("mouseout", this.onCanvasLeave);
-    this.core.addListener("mouseenter", "points", this.onPointHover);
-    this.core.addListener("mousemove", this.onFeatureHover);
-    this.core.addListener("click", this.onCanvasClick);
-    this.core.addListener("mousedown", "points", this.onPointDrag);
-    this.core.addListener("mousedown", "lines", this.onGeometryMouseDown);
-    this.core.addListener("mousedown", "planes", this.onGeometryMouseDown);
-    this.core.addListener("dblclick", "lines", this.onGeometryDblClick);
-    this.core.addListener("dblclick", "planes", this.onGeometryDblClick);
-    document.addEventListener("keydown", this.onKeyPress);
-    document.addEventListener("keyup", this.onKeyPress);
+    this.core.addListener("mouseout", this._canvasleave);
+    this.core.addListener("mouseenter", "points", this._pointhover);
+    this.core.addListener("mousemove", this._featurehover);
+    this.core.addListener("click", this._canvasclick);
+    this.core.addListener("mousedown", "points", this._pointdrag);
+    this.core.addListener("mousedown", "lines", this._shapedrag);
+    this.core.addListener("mousedown", "planes", this._shapedrag);
+    this.core.addListener("dblclick", "lines", this._shapedblclick);
+    this.core.addListener("dblclick", "planes", this._shapedblclick);
+    document.addEventListener("keydown", this._keypress);
+    document.addEventListener("keyup", this._keypress);
   }
 
   public disable() {
@@ -67,24 +67,24 @@ export class MoveTool extends AnyTool {
     if (this.disabled) return;
     super.disable();
     this._stored.cursor?.();
-    document.removeEventListener("keydown", this.onKeyPress);
-    document.removeEventListener("keyup", this.onKeyPress);
-    this.core.removeListener("mousedown", "points", this.onPointDrag);
-    this.core.removeListener("mouseenter", "points", this.onPointHover);
-    this.core.removeListener("mousedown", "planes", this.onGeometryMouseDown);
-    this.core.removeListener("mousedown", "lines", this.onGeometryMouseDown);
-    this.core.removeListener("dblclick", "planes", this.onGeometryDblClick);
-    this.core.removeListener("dblclick", "lines", this.onGeometryDblClick);
-    this.core.removeListener("click", this.onCanvasClick);
-    this.core.removeListener("mousemove", this.onFeatureHover);
-    this.core.removeListener("mouseout", this.onCanvasLeave);
+    document.removeEventListener("keydown", this._keypress);
+    document.removeEventListener("keyup", this._keypress);
+    this.core.removeListener("mousedown", "points", this._pointdrag);
+    this.core.removeListener("mouseenter", "points", this._pointhover);
+    this.core.removeListener("mousedown", "planes", this._shapedrag);
+    this.core.removeListener("mousedown", "lines", this._shapedrag);
+    this.core.removeListener("dblclick", "planes", this._shapedblclick);
+    this.core.removeListener("dblclick", "lines", this._shapedblclick);
+    this.core.removeListener("click", this._canvasclick);
+    this.core.removeListener("mousemove", this._featurehover);
+    this.core.removeListener("mouseout", this._canvasleave);
   }
 
   public start() {
     super.start();
     this.core.isolate();
     if (this._state.features) this.core.render("features", this._state.features);
-    this._renderPoints();
+    this._render();
   }
 
   public finish() {
@@ -106,11 +106,11 @@ export class MoveTool extends AnyTool {
     )}) 10 8, ${fallback}`;
   };
 
-  protected onCanvasLeave() {
+  protected _canvasleave() {
     this.core.state.features.set("hover", []);
   }
 
-  protected onFeatureHover(e: SourceEvent) {
+  protected _featurehover(e: SourceEvent) {
     if (this._state.dragging) return;
     this._event = e;
     const points = e.points.filter(this.config.filter);
@@ -137,7 +137,7 @@ export class MoveTool extends AnyTool {
     }
   }
 
-  protected onCanvasClick(e: SourceEvent) {
+  protected _canvasclick(e: SourceEvent) {
     e.preventDefault();
     const indices = [...e.points, ...e.lines, ...e.planes].map((f) => f.nesting[0]);
     if (
@@ -155,11 +155,11 @@ export class MoveTool extends AnyTool {
 
     this.core.state.features.set("active", []);
     this.core.isolate();
-    this._renderPoints();
-    this.onFeatureHover(e);
+    this._render();
+    this._featurehover(e);
   }
 
-  protected onGeometryMouseDown(e: SourceEvent) {
+  protected _shapedrag(e: SourceEvent) {
     if (
       e.points.filter(this.config.filter).length &&
       !this.core.state.features.get("active").some((n) => typeof n === "number")
@@ -183,7 +183,7 @@ export class MoveTool extends AnyTool {
     );
     if (!state) return;
     this.core.state.features.set("active", state.active);
-    this._renderPoints();
+    this._render();
     this._state.dragging = true;
 
     const _onmousemove = (ev: SourceEvent) => {
@@ -230,7 +230,7 @@ export class MoveTool extends AnyTool {
         }
         this.refresh();
       }
-      this.onFeatureHover(e);
+      this._featurehover(e);
       if (this.disabled) {
         this.disabled = false;
         this.disable();
@@ -241,7 +241,7 @@ export class MoveTool extends AnyTool {
     document.addEventListener("mouseup", _onmouseup, { once: true });
   }
 
-  protected onGeometryDblClick(e: SourceEvent) {
+  protected _shapedblclick(e: SourceEvent) {
     e.preventDefault();
     if (this.config.modify !== "dblclick") return;
 
@@ -257,7 +257,7 @@ export class MoveTool extends AnyTool {
     this.refresh();
   }
 
-  protected onKeyPress(e: Pick<KeyboardEvent, "metaKey" | "altKey" | "ctrlKey" | "shiftKey">) {
+  protected _keypress(e: Pick<KeyboardEvent, "metaKey" | "altKey" | "ctrlKey" | "shiftKey">) {
     if (typeof this.config.modify !== "string" || !["meta", "alt", "ctrl"].includes(this.config.modify)) return;
 
     if (!e[getModifierKey(this.config.modify as KeyModifier)]) {
@@ -266,17 +266,17 @@ export class MoveTool extends AnyTool {
         this.core.state.points.set("active", []);
         this.core.state.points.set("hover", []);
         this.refresh();
-        this._event && this.onFeatureHover(this._event);
+        this._event && this._featurehover(this._event);
       }
       return;
     }
 
     this.core.state.features.set("active", this.core.state.features.get("active").map(lib.array.array));
     this.refresh();
-    this._event && this.onFeatureHover(this._event);
+    this._event && this._featurehover(this._event);
   }
 
-  protected onPointHover(e: SourceEvent) {
+  protected _pointhover(e: SourceEvent) {
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
     let point = e.points.filter(this.config.filter)[0];
     if (!point) return;
@@ -299,7 +299,7 @@ export class MoveTool extends AnyTool {
     this.core.addListener("mousemove", "points", _onmousemove);
   }
 
-  protected onPointDrag(e: SourceEvent) {
+  protected _pointdrag(e: SourceEvent) {
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
     const point = e.points.filter(this.config.filter)[0];
     let feature = this.core.getFeatures([point?.nesting[0]])[0];
@@ -394,9 +394,9 @@ export class MoveTool extends AnyTool {
           ...this.core.features.slice(point.nesting[0] + 1),
         ];
       }
-      this._renderPoints();
-      this.onKeyPress(ev);
-      this.onFeatureHover(e);
+      this._render();
+      this._keypress(ev);
+      this._featurehover(e);
       if (this.disabled) {
         this.disabled = false;
         this.disable();
@@ -445,7 +445,7 @@ export class MoveTool extends AnyTool {
     this.core.addListener("mouseleave", "points", _onpointleave);
   }
 
-  private _renderPoints() {
+  private _render() {
     const points = lib.createPoints(this._state.features ?? this.core.features, this.core.state.features.get("active"));
     if (this.core.state.features.get("active").some((n) => typeof n === "number")) {
       this.core.state.points.add(

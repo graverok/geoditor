@@ -31,8 +31,8 @@ export class MapboxController extends Controller {
   private readonly _options: Options | undefined;
   private _removeSources!: () => void;
   private _subscriptions: Subscription[] = [];
-  private _onInit: (() => void) | undefined;
   private _hovered: ShapesCollection = {};
+  private _ready?: VoidFunction;
 
   constructor(id: number | string, map: mapboxgl.Map, options: Options);
   constructor(id: number | string, map: mapboxgl.Map);
@@ -48,42 +48,44 @@ export class MapboxController extends Controller {
       lines: `@@map-editor-${id ?? ""}-lines`,
       planes: `@@map-editor-${id ?? ""}-planes`,
     });
-    this._handleFillMouseMove = this._handleFillMouseMove.bind(this);
-    this._handleFillMouseLeave = this._handleFillMouseLeave.bind(this);
-    this._handleLineMouseMove = this._handleLineMouseMove.bind(this);
-    this._handleLineMouseLeave = this._handleLineMouseLeave.bind(this);
-    this._handlePointMouseMove = this._handlePointMouseMove.bind(this);
-    this._handlePointMouseLeave = this._handlePointMouseLeave.bind(this);
-    this._handleRender = this._handleRender.bind(this);
+
     this.addListener = this.addListener.bind(this);
     this.removeListener = this.removeListener.bind(this);
     this.setCursor = this.setCursor.bind(this);
     this.setState = this.setState.bind(this);
-    this._options = options;
     this.render = this.render.bind(this);
+
+    this._options = options;
+    this._fillmove = this._fillmove.bind(this);
+    this._fillleave = this._fillleave.bind(this);
+    this._linemove = this._linemove.bind(this);
+    this._lineleave = this._lineleave.bind(this);
+    this._pointmove = this._pointmove.bind(this);
+    this._pointleave = this._pointleave.bind(this);
+    this._render = this._render.bind(this);
 
     const init = () => {
       this._map = map;
       this._initSources(this._options);
-      this._map.on("mousemove", this.layerNames.planes, this._handleFillMouseMove);
-      this._map.on("mousedown", this.layerNames.planes, this._handleFillMouseMove);
-      this._map.on("mouseleave", this.layerNames.planes, this._handleFillMouseLeave);
-      this._map.on("mousemove", this.layerNames.lines, this._handleLineMouseMove);
-      this._map.on("mousedown", this.layerNames.lines, this._handleLineMouseMove);
-      this._map.on("mouseleave", this.layerNames.lines, this._handleLineMouseLeave);
-      this._map.on("mousemove", this.layerNames.points, this._handlePointMouseMove);
-      this._map.on("mousedown", this.layerNames.points, this._handlePointMouseMove);
-      this._map.on("mouseleave", this.layerNames.points, this._handlePointMouseLeave);
-      this._handleRender();
-      this._onInit?.();
+      this._map.on("mousemove", this.layerNames.planes, this._fillmove);
+      this._map.on("mousedown", this.layerNames.planes, this._fillmove);
+      this._map.on("mouseleave", this.layerNames.planes, this._fillleave);
+      this._map.on("mousemove", this.layerNames.lines, this._linemove);
+      this._map.on("mousedown", this.layerNames.lines, this._linemove);
+      this._map.on("mouseleave", this.layerNames.lines, this._lineleave);
+      this._map.on("mousemove", this.layerNames.points, this._pointmove);
+      this._map.on("mousedown", this.layerNames.points, this._pointmove);
+      this._map.on("mouseleave", this.layerNames.points, this._pointleave);
+      this._render();
+      this._ready?.();
     };
 
     map.isStyleLoaded() ? init() : map.on("load", () => init());
   }
 
-  public onInit(callback: () => void) {
+  public ready(callback: VoidFunction) {
     if (this._map) return callback();
-    this._onInit = callback;
+    this._ready = callback;
   }
 
   public addListener(
@@ -98,10 +100,10 @@ export class MapboxController extends Controller {
         SourceEventHandler,
         SourceEventOptions | undefined,
       ];
-      this._addMapListener(name, callback, options);
+      this._listenmap(name, callback, options);
     } else {
       const [name, layer, callback] = params as [ControllerEventType, LayerType, SourceEventHandler];
-      this._addLayerListener(name, layer, callback);
+      this._listenlayer(name, layer, callback);
     }
   }
 
@@ -110,10 +112,10 @@ export class MapboxController extends Controller {
   ) {
     if (typeof params[1] === "function") {
       const [name, callback] = params as [ControllerEventType, SourceEventHandler];
-      this._removeSubscription({ name, callback });
+      this._unsubscribe({ name, callback });
     } else {
       const [name, layer, callback] = params as [ControllerEventType, LayerType, SourceEventHandler];
-      this._removeSubscription({ name, layer, callback });
+      this._unsubscribe({ name, layer, callback });
     }
   }
 
@@ -131,14 +133,14 @@ export class MapboxController extends Controller {
 
   public setState(layer: LayerType, nesting: number[][], key: LayerState, value: boolean) {
     if (layer === "points")
-      return this._handleSetState(
+      return this._setState(
         layer,
         nesting.map((n) => `${n.map((x) => x + 1).join(".")}.`),
         key,
         value,
       );
 
-    this._handleSetState(
+    this._setState(
       layer,
       nesting.reduce((acc, n) => {
         const search = `${n.map((x) => x + 1).join(".")}.`;
@@ -206,15 +208,15 @@ export class MapboxController extends Controller {
   }
 
   public remove() {
-    this._map?.off("mousemove", this.layerNames.planes, this._handleFillMouseMove);
-    this._map?.off("mousedown", this.layerNames.planes, this._handleFillMouseMove);
-    this._map?.off("mouseleave", this.layerNames.planes, this._handleFillMouseLeave);
-    this._map?.off("mousemove", this.layerNames.lines, this._handleLineMouseMove);
-    this._map?.off("mousedown", this.layerNames.lines, this._handleLineMouseMove);
-    this._map?.off("mouseleave", this.layerNames.lines, this._handleLineMouseLeave);
-    this._map?.off("mousemove", this.layerNames.points, this._handlePointMouseMove);
-    this._map?.off("mousedown", this.layerNames.points, this._handlePointMouseMove);
-    this._map?.off("mouseleave", this.layerNames.points, this._handlePointMouseLeave);
+    this._map?.off("mousemove", this.layerNames.planes, this._fillmove);
+    this._map?.off("mousedown", this.layerNames.planes, this._fillmove);
+    this._map?.off("mouseleave", this.layerNames.planes, this._fillleave);
+    this._map?.off("mousemove", this.layerNames.lines, this._linemove);
+    this._map?.off("mousedown", this.layerNames.lines, this._linemove);
+    this._map?.off("mouseleave", this.layerNames.lines, this._lineleave);
+    this._map?.off("mousemove", this.layerNames.points, this._pointmove);
+    this._map?.off("mousedown", this.layerNames.points, this._pointmove);
+    this._map?.off("mouseleave", this.layerNames.points, this._pointleave);
     this._removeSources?.();
     this._map = undefined;
   }
@@ -303,7 +305,7 @@ export class MapboxController extends Controller {
     this._removeSources = () => sources.forEach((source) => removeSource(this._map, source));
   }
 
-  private _addSubscription(props: Subscription) {
+  private _subscribe(props: Subscription) {
     const current = this._subscriptions.findIndex(
       (item) => item.name === props.name && item.layer === props.layer && item.callback === props.callback,
     );
@@ -316,7 +318,7 @@ export class MapboxController extends Controller {
     this._subscriptions.push(props);
   }
 
-  private _removeSubscription(props: Omit<Subscription, "off">) {
+  private _unsubscribe(props: Omit<Subscription, "off">) {
     const index = this._subscriptions.findIndex(
       (item) => item.name === props.name && item.layer === props.layer && item.callback === props.callback,
     );
@@ -326,7 +328,7 @@ export class MapboxController extends Controller {
     }
   }
 
-  private _addMapListener(name: ControllerEventType, callback: SourceEventHandler, options?: SourceEventOptions) {
+  private _listenmap(name: ControllerEventType, callback: SourceEventHandler, options?: SourceEventOptions) {
     const handler = (e: mapboxgl.MapMouseEvent) => {
       callback({ ...eventParser(e), ...this._mapHandler() });
     };
@@ -337,16 +339,16 @@ export class MapboxController extends Controller {
     }
 
     this._map?.on(name, handler);
-    this._addSubscription({ callback, name, off: () => this._map?.off(name, handler) });
+    this._subscribe({ callback, name, off: () => this._map?.off(name, handler) });
   }
 
-  private _addLayerListener(name: ControllerEventType, layer: LayerType, callback: SourceEventHandler) {
+  private _listenlayer(name: ControllerEventType, layer: LayerType, callback: SourceEventHandler) {
     const handler = (e: mapboxgl.MapLayerMouseEvent | mapboxgl.MapLayerTouchEvent) => {
       callback({ ...eventParser(e as mapboxgl.MapLayerMouseEvent), layer, ...this._mapHandler() });
     };
 
     if (name === "mouseleave" || name === "mouseover") {
-      return this._addSubscription({
+      return this._subscribe({
         callback,
         name,
         layer,
@@ -355,7 +357,7 @@ export class MapboxController extends Controller {
     }
 
     this._map?.on(name, this.layerNames[layer], handler);
-    this._addSubscription({
+    this._subscribe({
       name,
       layer,
       callback,
@@ -363,7 +365,7 @@ export class MapboxController extends Controller {
     });
   }
 
-  private _handleRender() {
+  private _render() {
     (["points", "lines", "planes"] as LayerType[]).forEach((type) => {
       if (!this._requested[type]) return;
       const parse = (item: geojson.Feature) => ({
@@ -396,10 +398,10 @@ export class MapboxController extends Controller {
       this._requested[type] = false;
     });
 
-    this._map && window.requestAnimationFrame(this._handleRender);
+    this._map && window.requestAnimationFrame(this._render);
   }
 
-  private _handleSetState(layer: LayerType, ids: (string | undefined)[], key: LayerState, value: boolean) {
+  private _setState(layer: LayerType, ids: (string | undefined)[], key: LayerState, value: boolean) {
     let _changed = false;
 
     ids.forEach((id) => {
@@ -423,7 +425,7 @@ export class MapboxController extends Controller {
     this._requested[layer] = true;
   }
 
-  private _handleFillMouseMove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
+  private _fillmove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
     this._hovered.planes = (e.features || []).map((f) => {
       const { nesting, ...rest } = f.properties as LayerFeatureProperties;
       return {
@@ -435,11 +437,11 @@ export class MapboxController extends Controller {
     });
   }
 
-  private _handleFillMouseLeave() {
+  private _fillleave() {
     this._hovered.planes = [];
   }
 
-  private _handleLineMouseMove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
+  private _linemove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
     this._hovered.lines = (e.features || []).map((f) => {
       const { nesting, ...rest } = f.properties as LayerFeatureProperties;
       return {
@@ -451,11 +453,11 @@ export class MapboxController extends Controller {
     });
   }
 
-  private _handleLineMouseLeave() {
+  private _lineleave() {
     this._hovered.lines = [];
   }
 
-  private _handlePointMouseMove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
+  private _pointmove(e: mapboxgl.MapLayerTouchEvent | mapboxgl.MapLayerMouseEvent) {
     this._hovered.points = sortPointsByDistance(
       (e.features ?? []) as unknown as geojson.Feature<geojson.Point, LayerFeatureProperties>[],
       e.lngLat.toArray(),
@@ -470,7 +472,7 @@ export class MapboxController extends Controller {
     });
   }
 
-  private _handlePointMouseLeave() {
+  private _pointleave() {
     this._hovered.points = [];
   }
 }
