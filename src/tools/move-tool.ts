@@ -1,7 +1,7 @@
 import { AnyTool } from "../core";
 import * as lib from "../lib";
 import { Feature, FilterHandler, KeyModifier, LayerType, Point, Position, SourceEvent } from "../types";
-import { array, getModifierKey } from "../lib";
+import { getModifierKey } from "../lib";
 
 export interface MoveToolConfig {
   modify: boolean | "dblclick" | "alt" | "meta" | "ctrl";
@@ -16,6 +16,7 @@ export class MoveTool extends AnyTool {
   };
   private _stored: { cursor?: () => void } = {};
   private _event: SourceEvent | null = null;
+  private _paused: boolean = false;
 
   constructor(config?: MoveToolConfig) {
     super({
@@ -43,6 +44,7 @@ export class MoveTool extends AnyTool {
   }
 
   public enable() {
+    this._paused = false;
     if (!this.disabled) return;
     super.enable();
     this._stored.cursor = this.core.setCursor("default");
@@ -61,9 +63,10 @@ export class MoveTool extends AnyTool {
 
   public disable() {
     if (this._state.dragging) {
-      this.disabled = true;
+      this._paused = true;
       return;
     }
+    this._paused = false;
     if (this.disabled) return;
     super.disable();
     this._stored.cursor?.();
@@ -217,8 +220,6 @@ export class MoveTool extends AnyTool {
       this._state.dragging = false;
 
       if (this._state.features) {
-        if (current.active.map(array.plain).includes(geometry.nesting[0]))
-          this.core.state.features.set("active", current.active);
         this.core.state.features.set("hover", current.hover);
         if (this._state.features) this.core.features = this._state.features;
         this._state.features = undefined;
@@ -231,10 +232,7 @@ export class MoveTool extends AnyTool {
         this.refresh();
       }
       this._featurehover(e);
-      if (this.disabled) {
-        this.disabled = false;
-        this.disable();
-      }
+      if (this._paused) this.disable();
     };
 
     this.core.addListener("mousemove", _onmousemove);
@@ -397,21 +395,18 @@ export class MoveTool extends AnyTool {
       this._render();
       this._keypress(ev);
       this._featurehover(e);
-      if (this.disabled) {
-        this.disabled = false;
-        this.disable();
-      }
+      if (this._paused) this.disable();
     };
 
-    const isReducible = positions.length > 2 + Number(lib.isPolygonLike(feature));
+    const reducible = positions.length > 2 + Number(lib.isPolygonLike(feature));
     const before =
-      isReducible && point.nesting[pidx] === 0
+      reducible && point.nesting[pidx] === 0
         ? lib.isPolygonLike(feature)
           ? positions.length - 1
           : -1
         : point.nesting[pidx] - 1;
     const after =
-      isReducible && point.nesting[pidx] === positions.length - 1
+      reducible && point.nesting[pidx] === positions.length - 1
         ? lib.isPolygonLike(feature)
           ? 0
           : -1
