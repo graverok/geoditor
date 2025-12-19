@@ -44,9 +44,9 @@ export class MapboxController extends Controller {
         ? ([params[0], params[1], params[2]] as [number | string, mapboxgl.Map, Options | undefined])
         : ([undefined, params[0], params[1]] as [undefined, mapboxgl.Map, Options | undefined]);
     super({
-      points: `@@map-editor-${id ?? ""}-points`,
-      lines: `@@map-editor-${id ?? ""}-lines`,
       planes: `@@map-editor-${id ?? ""}-planes`,
+      lines: `@@map-editor-${id ?? ""}-lines`,
+      points: `@@map-editor-${id ?? ""}-points`,
     });
 
     this.addListener = this.addListener.bind(this);
