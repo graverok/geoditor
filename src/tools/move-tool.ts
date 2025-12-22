@@ -4,7 +4,7 @@ import { Feature, FilterHandler, KeyModifier, LayerType, Point, Position, Source
 import { getModifierKey } from "../lib";
 
 export interface MoveToolConfig {
-  modify: boolean | "dblclick" | "alt" | "meta" | "ctrl";
+  modify: boolean | "click" | "dblclick" | "alt" | "meta" | "ctrl";
   filter: FilterHandler;
 }
 
@@ -18,7 +18,7 @@ export class MoveTool extends AnyTool {
   private _event: SourceEvent | null = null;
   private _paused: boolean = false;
 
-  constructor(config?: MoveToolConfig) {
+  constructor(config?: Partial<MoveToolConfig>) {
     super({
       modify: config?.modify ?? true,
       filter: config?.filter ?? (() => true),
@@ -165,7 +165,7 @@ export class MoveTool extends AnyTool {
   protected _shapedrag(e: SourceEvent) {
     if (
       e.points.filter(this.config.filter).length &&
-      !this.core.state.features.get("active").some((n) => typeof n === "number")
+      (this.config.modify === true || !this.core.state.features.get("active").some((n) => typeof n === "number"))
     )
       return;
     if (e.layer === "planes" && e.lines.filter(this.config.filter).length) return;
@@ -182,7 +182,7 @@ export class MoveTool extends AnyTool {
       e.originalEvent.shiftKey,
       this.core.state.features.get("active"),
       geometry.nesting,
-      this.config.modify === true,
+      this.config.modify === true || this.config.modify === "click",
     );
     if (!state) return;
     this.core.state.features.set("active", state.active);
@@ -275,7 +275,8 @@ export class MoveTool extends AnyTool {
   }
 
   protected _pointhover(e: SourceEvent) {
-    if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
+    if (this.config.modify !== true && this.core.state.features.get("active").some((n) => typeof n === "number"))
+      return;
     let point = e.points.filter(this.config.filter)[0];
     if (!point) return;
     !this._state.dragging && this.core.state.points.set("hover", [point.nesting]);
@@ -298,7 +299,8 @@ export class MoveTool extends AnyTool {
   }
 
   protected _pointdrag(e: SourceEvent) {
-    if (this.core.state.features.get("active").some((n) => typeof n === "number")) return;
+    if (this.config.modify !== true && this.core.state.features.get("active").some((n) => typeof n === "number"))
+      return;
     const point = e.points.filter(this.config.filter)[0];
     let feature = this.core.getFeatures([point?.nesting[0]])[0];
     if (!point || !feature) return;
@@ -444,7 +446,7 @@ export class MoveTool extends AnyTool {
   private _render() {
     const points = lib.createPoints(this._state.features ?? this.core.features, this.core.state.features.get("active"));
 
-    if (this.core.state.features.get("active").some((n) => typeof n === "number")) {
+    if (this.config.modify !== true && this.core.state.features.get("active").some((n) => typeof n === "number")) {
       this.core.state.points.add(
         "disabled",
         points.map((p) => p.nesting),

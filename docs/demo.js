@@ -45,7 +45,7 @@ if (container) {
 
   const tools = {
     hand: new HandTool(),
-    move: new MoveTool(),
+    move: new MoveTool({ modify: "click" }),
     pen: new PenTool(),
     delete: new DeleteTool(),
   };
