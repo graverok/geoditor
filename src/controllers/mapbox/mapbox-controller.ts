@@ -30,6 +30,7 @@ export class MapboxController extends Controller {
   private _states: Partial<Record<LayerType, Partial<Record<LayerState, string[]>>>> = {};
   private readonly _options: Options | undefined;
   private _removeSources!: () => void;
+  private _disposers: Map<string, VoidFunction> = new Map();
   private _subscriptions: Subscription[] = [];
   private _hovered: ShapesCollection = {};
   private _ready?: VoidFunction;
@@ -80,7 +81,18 @@ export class MapboxController extends Controller {
       this._ready?.();
     };
 
-    map.isStyleLoaded() ? init() : map.on("load", () => init());
+    if (map.loaded()) {
+      init();
+      return;
+    }
+    const onstyledata = () => {
+      init();
+      this._disposers.get("onstyledata")?.();
+      this._disposers.delete("onstyledata");
+    };
+
+    map.on("styledata", onstyledata);
+    this._disposers.set("onstyledata", () => map.off("styledata", onstyledata));
   }
 
   public ready(callback: VoidFunction) {
@@ -208,6 +220,7 @@ export class MapboxController extends Controller {
   }
 
   public remove() {
+    this._disposers.forEach((f) => f());
     this._map?.off("mousemove", this.layerNames.planes, this._fillmove);
     this._map?.off("mousedown", this.layerNames.planes, this._fillmove);
     this._map?.off("mouseleave", this.layerNames.planes, this._fillleave);
