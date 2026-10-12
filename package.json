@@ -1,5 +1,6 @@
 {
   "name": "geoditor",
+  "description": "Map GeoJSON geometry editor",
   "version": "0.3.4",
   "author": {
     "name": "Aleksandr Gurianov",
@@ -56,6 +57,7 @@
     "test": "jest"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ]
 }
